@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}eFactura Gateway{% endblock %}</title>
+    
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    
+    <style>
+        :root {
+            --sidebar-bg: #1a1d29;
+            --sidebar-text: #a3a4a6;
+            --sidebar-active: #3b7ddd;
+            --content-bg: #f8f9fa;
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: var(--content-bg);
+        }
+        
+        .sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 100vh;
+            width: 260px;
+            background-color: var(--sidebar-bg);
+            color: var(--sidebar-text);
+            padding: 0;
+            z-index: 1000;
+            overflow-y: auto;
+        }
+        
+        .sidebar-brand {
+            padding: 1.5rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            color: white;
+            font-weight: 600;
+            font-size: 1.25rem;
+        }
+        
+        .sidebar-nav {
+            padding: 1rem 0;
+        }
+        
+        .sidebar-nav .nav-link {
+            color: var(--sidebar-text);
+            padding: 0.75rem 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            transition: all 0.2s;
+        }
+        
+        .sidebar-nav .nav-link:hover {
+            background-color: rgba(255, 255, 255, 0.05);
+            color: white;
+        }
+        
+        .sidebar-nav .nav-link.active {
+            background-color: rgba(59, 125, 221, 0.1);
+            color: var(--sidebar-active);
+            border-left: 3px solid var(--sidebar-active);
+        }
+        
+        .main-content {
+            margin-left: 260px;
+            min-height: 100vh;
+        }
+        
+        .topbar {
+            background-color: white;
+            border-bottom: 1px solid #e3e6f0;
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .content-wrapper {
+            padding: 2rem;
+        }
+        
+        .card {
+            border: none;
+            box-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.15);
+            margin-bottom: 1.5rem;
+        }
+        
+        .card-header {
+            background-color: white;
+            border-bottom: 1px solid #e3e6f0;
+            padding: 1rem 1.5rem;
+            font-weight: 600;
+        }
+        
+        .badge {
+            padding: 0.35em 0.65em;
+            font-weight: 500;
+        }
+        
+        .table {
+            margin-bottom: 0;
+        }
+        
+        .table thead th {
+            border-bottom: 2px solid #e3e6f0;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.75rem;
+            letter-spacing: 0.05em;
+        }
+    </style>
+    
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <!-- Sidebar -->
+    <nav class="sidebar">
+        <div class="sidebar-brand">
+            <i class="bi bi-receipt"></i> eFactura Gateway
+        </div>
+        <ul class="sidebar-nav list-unstyled">
+            <li>
+                <a href="{{ url_for('dashboard.index') }}" class="nav-link {% if request.endpoint == 'dashboard.index' %}active{% endif %}">
+                    <i class="bi bi-speedometer2"></i>
+                    <span>Dashboard</span>
+                </a>
+            </li>
+            <li>
+                <a href="{{ url_for('companies.index') }}" class="nav-link {% if request.endpoint.startswith('companies') %}active{% endif %}">
+                    <i class="bi bi-building"></i>
+                    <span>My Companies</span>
+                </a>
+            </li>
+            <li>
+                <a href="{{ url_for('api_settings.index') }}" class="nav-link {% if request.endpoint.startswith('api_settings') %}active{% endif %}">
+                    <i class="bi bi-key"></i>
+                    <span>API Settings</span>
+                </a>
+            </li>
+            {% if current_user.is_authenticated and current_user.is_admin %}
+            <li>
+                <a href="{{ url_for('users.index') }}" class="nav-link {% if request.endpoint.startswith('users') %}active{% endif %}">
+                    <i class="bi bi-people"></i>
+                    <span>User Management</span>
+                </a>
+            </li>
+            {% endif %}
+        </ul>
+    </nav>
+    
+    <!-- Main Content -->
+    <div class="main-content">
+        <!-- Topbar -->
+        <div class="topbar">
+            <div>
+                {% if current_user.is_authenticated %}
+                    {% if request.endpoint == 'dashboard.index' and companies %}
+                        <form method="POST" action="{{ url_for('dashboard.switch_company') }}" class="d-inline">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                            <select name="company_id" class="form-select form-select-sm d-inline-block" style="width: auto;" onchange="this.form.submit()">
+                                {% for company in companies %}
+                                    <option value="{{ company.id }}" {% if selected_company and company.id == selected_company.id %}selected{% endif %}>
+                                        {{ company.name }} ({{ company.cif }})
+                                    </option>
+                                {% endfor %}
+                            </select>
+                        </form>
+                    {% endif %}
+                {% endif %}
+            </div>
+            <div class="d-flex align-items-center gap-3">
+                {% if current_user.is_authenticated %}
+                    <span class="text-muted">{{ current_user.email }}</span>
+                    <a href="{{ url_for('auth.logout') }}" class="btn btn-sm btn-outline-secondary">
+                        <i class="bi bi-box-arrow-right"></i> Logout
+                    </a>
+                {% else %}
+                    <a href="{{ url_for('auth.login') }}" class="btn btn-sm btn-primary">Login</a>
+                {% endif %}
+            </div>
+        </div>
+        
+        <!-- Content -->
+        <div class="content-wrapper">
+            <!-- Flash Messages -->
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+            
+            {% block content %}{% endblock %}
+        </div>
+    </div>
+    
+    <!-- Bootstrap 5 JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>
+

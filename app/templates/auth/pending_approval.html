@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Registration Pending Approval - eFactura Gateway</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+        }
+        .container {
+            width: 100%;
+            max-width: 500px;
+            margin: 0 auto;
+        }
+        .pending-card {
+            width: 100%;
+            border: none;
+            border-radius: 16px;
+            overflow: hidden;
+            background: #ffffff;
+        }
+        .card-body {
+            padding: 2.5rem !important;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            border-radius: 8px;
+            padding: 0.75rem;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        .btn-outline-secondary {
+            border-radius: 8px;
+            padding: 0.75rem;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+        .alert {
+            border-radius: 8px;
+            border: none;
+            margin-bottom: 1rem;
+        }
+        h2 {
+            color: #333;
+            font-weight: 700;
+            font-size: 1.75rem;
+        }
+        .text-muted {
+            color: #6c757d !important;
+        }
+        @media (max-width: 576px) {
+            .card-body {
+                padding: 2rem 1.5rem !important;
+            }
+            .container {
+                max-width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card pending-card shadow-lg">
+            <div class="card-body p-5">
+                <div class="text-center mb-4">
+                    <div class="mb-3">
+                        <i class="bi bi-clock-history" style="font-size: 4rem; color: #ffc107;"></i>
+                    </div>
+                    <h2 class="mb-2">Registration Pending Approval</h2>
+                    <p class="text-muted mb-0">Your account registration is awaiting admin approval</p>
+                </div>
+                
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        {% for category, message in messages %}
+                            <div class="alert alert-{{ 'warning' if category == 'warning' else ('danger' if category == 'error' else category) }} alert-dismissible fade show">
+                                {{ message }}
+                                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                            </div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+                
+                <div class="alert alert-info" role="alert">
+                    <h5 class="alert-heading"><i class="bi bi-info-circle"></i> What happens next?</h5>
+                    <p class="mb-0">
+                        Your registration for <strong>{{ email }}</strong> has been submitted successfully. 
+                        An administrator will review your registration and approve your account shortly.
+                    </p>
+                </div>
+                
+                <div class="alert alert-light" role="alert">
+                    <p class="mb-0">
+                        <i class="bi bi-envelope-check"></i> You will be able to log in once your account has been approved by an administrator.
+                    </p>
+                </div>
+                
+                <div class="d-grid gap-2 mt-4">
+                    {% if current_user.is_authenticated %}
+                    <a href="{{ url_for('auth.logout') }}" class="btn btn-primary">
+                        <i class="bi bi-box-arrow-right"></i> Logout
+                    </a>
+                    {% else %}
+                    <a href="{{ url_for('auth.login') }}" class="btn btn-primary">
+                        <i class="bi bi-box-arrow-in-right"></i> Go to Login Page
+                    </a>
+                    <a href="{{ url_for('auth.register') }}" class="btn btn-outline-secondary">
+                        <i class="bi bi-arrow-left"></i> Back to Registration
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
+

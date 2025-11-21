@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+
+{% block title %}API Settings - eFactura Gateway{% endblock %}
+
+{% block content %}
+<h1 class="h3 mb-4">API Settings</h1>
+
+{% if new_api_key %}
+<div class="alert alert-success alert-dismissible fade show" role="alert">
+    <h5 class="alert-heading"><i class="bi bi-key"></i> New API Key Generated</h5>
+    <p><strong>Company:</strong> {{ new_api_key_company }}</p>
+    <p><strong>API Key:</strong></p>
+    <div class="bg-light p-3 rounded mb-2">
+        <code style="font-size: 0.9rem; word-break: break-all;">{{ new_api_key }}</code>
+    </div>
+    <p class="mb-0"><strong>Important:</strong> Save this key now. You won't be able to see it again!</p>
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+{% for item in companies_with_keys %}
+<div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">{{ item.company.name }} <small class="text-muted">({{ item.company.cif }})</small></h5>
+        <form method="POST" action="{{ url_for('api_settings.generate_key') }}" class="d-inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+            <input type="hidden" name="company_id" value="{{ item.company.id }}">
+            <button type="submit" class="btn btn-sm btn-primary">
+                <i class="bi bi-plus-circle"></i> Generate New Key
+            </button>
+        </form>
+    </div>
+    <div class="card-body">
+        {% if item.api_keys %}
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Key ID</th>
+                            <th>Status</th>
+                            <th>Created At</th>
+                            <th>Last Used</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for api_key in item.api_keys %}
+                        <tr>
+                            <td><code>#{{ api_key.id }}</code></td>
+                            <td>
+                                {% if api_key.is_active %}
+                                    <span class="badge bg-success">Active</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">Revoked</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ api_key.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                            <td>
+                                {% if api_key.last_used_at %}
+                                    {{ api_key.last_used_at.strftime('%Y-%m-%d %H:%M') }}
+                                {% else %}
+                                    <span class="text-muted">Never</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if api_key.is_active %}
+                                    <form method="POST" action="{{ url_for('api_settings.revoke_key', key_id=api_key.id) }}" 
+                                          class="d-inline" 
+                                          onsubmit="return confirm('Are you sure you want to revoke this API key?');">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">
+                                            <i class="bi bi-x-circle"></i> Revoke
+                                        </button>
+                                    </form>
+                                {% else %}
+                                    <span class="text-muted">Revoked</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="text-center py-4">
+                <i class="bi bi-key" style="font-size: 2rem; color: #ccc;"></i>
+                <p class="text-muted mt-2">No API keys for this company. Generate one to get started.</p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endfor %}
+
+{% if not companies_with_keys %}
+<div class="card">
+    <div class="card-body text-center py-5">
+        <i class="bi bi-building" style="font-size: 3rem; color: #ccc;"></i>
+        <h4 class="mt-3">No Companies Found</h4>
+        <p class="text-muted">Add a company first to generate API keys.</p>
+        <a href="{{ url_for('companies.index') }}" class="btn btn-primary mt-2">
+            <i class="bi bi-building"></i> Go to Companies
+        </a>
+    </div>
+</div>
+{% endif %}
+
+<div class="card mt-4">
+    <div class="card-header">
+        <h5 class="mb-0">API Documentation</h5>
+    </div>
+    <div class="card-body">
+        <h6>Endpoint</h6>
+        <pre class="bg-light p-3 rounded"><code>GET /api/v1/invoices</code></pre>
+        
+        <h6 class="mt-3">Authentication</h6>
+        <p>Include your API key in the <code>X-API-KEY</code> header:</p>
+        <pre class="bg-light p-3 rounded"><code>X-API-KEY: your-api-key-here</code></pre>
+        
+        <h6 class="mt-3">Query Parameters</h6>
+        <ul>
+            <li><code>page</code> - Page number (default: 1)</li>
+            <li><code>per_page</code> - Items per page (default: 50, max: 100)</li>
+        </ul>
+        
+        <h6 class="mt-3">Example Request</h6>
+        <pre class="bg-light p-3 rounded"><code>curl -H "X-API-KEY: your-api-key-here" \
+  https://your-domain.com/api/v1/invoices?page=1&per_page=50</code></pre>
+        
+        <h6 class="mt-3">Response</h6>
+        <p>The API returns invoices scoped to the company associated with the API key.</p>
+    </div>
+</div>
+{% endblock %}
+

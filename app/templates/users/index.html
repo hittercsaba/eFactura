@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+
+{% block title %}User Management - eFactura Gateway{% endblock %}
+
+{% block content %}
+<h1 class="h3 mb-4">User Management</h1>
+
+{% if pending_count > 0 %}
+<div class="alert alert-warning alert-dismissible fade show" role="alert">
+    <i class="bi bi-exclamation-triangle"></i> 
+    <strong>{{ pending_count }}</strong> user(s) pending approval.
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0">All Users</h5>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Email</th>
+                        <th>Status</th>
+                        <th>Role</th>
+                        <th>Registered</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for user in users %}
+                    <tr>
+                        <td>
+                            <strong>{{ user.email }}</strong>
+                            {% if user.id == current_user.id %}
+                                <span class="badge bg-info">You</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if user.is_approved %}
+                                <span class="badge bg-success">Approved</span>
+                            {% else %}
+                                <span class="badge bg-warning">Pending</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if user.is_admin %}
+                                <span class="badge bg-danger">Admin</span>
+                            {% else %}
+                                <span class="badge bg-secondary">User</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <small class="text-muted">
+                                {{ user.created_at.strftime('%Y-%m-%d %H:%M') }}
+                            </small>
+                        </td>
+                        <td>
+                            <div class="btn-group btn-group-sm" role="group">
+                                {% if not user.is_approved %}
+                                    <form method="POST" action="{{ url_for('users.approve_user', user_id=user.id) }}" class="d-inline">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                                        <button type="submit" class="btn btn-success btn-sm" 
+                                                onclick="return confirm('Approve this user?')">
+                                            <i class="bi bi-check-circle"></i> Approve
+                                        </button>
+                                    </form>
+                                    <form method="POST" action="{{ url_for('users.reject_user', user_id=user.id) }}" class="d-inline">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                                        <button type="submit" class="btn btn-danger btn-sm" 
+                                                onclick="return confirm('Are you sure you want to reject and delete this user?')">
+                                            <i class="bi bi-x-circle"></i> Reject
+                                        </button>
+                                    </form>
+                                {% else %}
+                                    {% if user.id != current_user.id %}
+                                        <form method="POST" action="{{ url_for('users.toggle_admin', user_id=user.id) }}" class="d-inline">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                                            <button type="submit" class="btn btn-warning btn-sm" 
+                                                    onclick="return confirm('{% if user.is_admin %}Revoke{% else %}Grant{% endif %} admin privileges for this user?')">
+                                                <i class="bi bi-shield-{% if user.is_admin %}slash-{% endif %}check"></i> 
+                                                {% if user.is_admin %}Revoke Admin{% else %}Make Admin{% endif %}
+                                            </button>
+                                        </form>
+                                    {% else %}
+                                        <span class="text-muted"><small>You</small></span>
+                                    {% endif %}
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+

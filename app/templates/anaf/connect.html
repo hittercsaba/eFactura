@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+
+{% block title %}Connect ANAF Account - eFactura Gateway{% endblock %}
+
+{% block content %}
+<h1 class="h3 mb-4">Connect ANAF Account</h1>
+
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0">OAuth Configuration</h5>
+    </div>
+    <div class="card-body">
+        <p class="text-muted">
+            Enter your ANAF OAuth credentials to connect your account. 
+            You can obtain these credentials by registering your application with ANAF.
+        </p>
+        
+        <form method="POST" action="{{ url_for('anaf.connect') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+            <div class="mb-3">
+                <label for="client_id" class="form-label">Client ID <span class="text-danger">*</span></label>
+                <input type="text" class="form-control" id="client_id" name="client_id" 
+                       value="{{ oauth_config.client_id if oauth_config else '' }}" required>
+            </div>
+            
+            <div class="mb-3">
+                <label for="client_secret" class="form-label">Client Secret <span class="text-danger">*</span></label>
+                <input type="password" class="form-control" id="client_secret" name="client_secret" 
+                       value="{{ oauth_config.client_secret if oauth_config else '' }}" required>
+            </div>
+            
+            <div class="mb-3">
+                <label for="redirect_uri" class="form-label">Redirect URI <span class="text-danger">*</span></label>
+                {% set base_url = get_base_url() %}
+                {% set default_redirect_uri = base_url.rstrip('/') + '/anaf/callback' %}
+                <input type="url" class="form-control" id="redirect_uri" name="redirect_uri" 
+                       value="{{ oauth_config.redirect_uri if oauth_config else default_redirect_uri }}" required>
+                <small class="text-muted">
+                    Must match EXACTLY the redirect URI registered with ANAF (including protocol, domain, and path).
+                    <br>Suggested value: <code>{{ default_redirect_uri }}</code>
+                    <br><strong>Important:</strong> According to your ANAF registration, it should be: <code>https://anaf.processiq.ro/anaf/callback</code>
+                    <br>Make sure the value above matches exactly (including https://).
+                </small>
+            </div>
+            
+            <button type="submit" class="btn btn-primary">
+                <i class="bi bi-link-45deg"></i> Save & Connect to ANAF
+            </button>
+        </form>
+    </div>
+</div>
+
+<div class="card mt-4">
+    <div class="card-header">
+        <h5 class="mb-0"><i class="bi bi-info-circle"></i> Detailed Instructions</h5>
+    </div>
+    <div class="card-body">
+        <h6 class="mb-3">Step 1: Register Your Application with ANAF</h6>
+        <p>Before you can connect your ANAF account, you need to register your application with ANAF's eFactura developer portal to obtain OAuth credentials.</p>
+        
+        <div class="alert alert-info">
+            <h6 class="alert-heading"><i class="bi bi-link-45deg"></i> Where to Register:</h6>
+            <p class="mb-2">To register your application and obtain OAuth credentials, visit the ANAF eFactura Developer Portal:</p>
+            <ul class="mb-2">
+                <li><strong>Main Portal:</strong> <a href="https://www.anaf.ro/anaf/internet/ANAF/servicii_online/e_factura" target="_blank" rel="noopener noreferrer">https://www.anaf.ro/anaf/internet/ANAF/servicii_online/e_factura</a></li>
+                <li><strong>Developer Portal:</strong> <a href="https://mfinante.gov.ro/e-factura/" target="_blank" rel="noopener noreferrer">https://mfinante.gov.ro/e-factura/</a></li>
+                <li><strong>Technical Documentation:</strong> Check ANAF's official documentation for API access and OAuth registration details</li>
+            </ul>
+            <p class="mb-0"><small><strong>Note:</strong> You may need to create an account or use your company credentials to access the developer portal.</small></p>
+        </div>
+        
+        <h6 class="mb-3 mt-4">Step 2: Obtain OAuth Credentials</h6>
+        <p>During the registration process with ANAF, you will receive:</p>
+        <ul>
+            <li><strong>Client ID:</strong> A unique identifier for your application</li>
+            <li><strong>Client Secret:</strong> A secret key used to authenticate your application</li>
+            <li><strong>Redirect URI:</strong> The callback URL where ANAF will redirect after authorization</li>
+        </ul>
+        
+        <div class="alert alert-warning">
+            <h6 class="alert-heading"><i class="bi bi-exclamation-triangle"></i> Important:</h6>
+            <p class="mb-0">When registering with ANAF, you must specify your Redirect URI exactly as: <code>{{ request.url_root }}anaf/callback</code></p>
+        </div>
+        
+        <h6 class="mb-3 mt-4">Step 3: Enter Your Credentials</h6>
+        <p>Once you have your OAuth credentials from ANAF:</p>
+        <ol>
+            <li>Enter your <strong>Client ID</strong> in the field above</li>
+            <li>Enter your <strong>Client Secret</strong> in the field above</li>
+            <li>Verify that the <strong>Redirect URI</strong> matches what you registered with ANAF</li>
+        </ol>
+        
+        <h6 class="mb-3 mt-4">Step 4: Connect Your Account</h6>
+        <p>After entering your credentials:</p>
+        <ol>
+            <li>Click <strong>"Save & Connect to ANAF"</strong> button above</li>
+            <li>You will be redirected to ANAF's authorization page</li>
+            <li>Log in with your ANAF credentials and authorize the application</li>
+            <li>After authorization, you will be redirected back to this application</li>
+            <li>Your companies will be automatically discovered and linked to your account</li>
+        </ol>
+        
+        <h6 class="mb-3 mt-4">Step 5: Manage Your Companies</h6>
+        <p>Once connected, you can:</p>
+        <ul>
+            <li>View all companies associated with your ANAF account</li>
+            <li>Enable automatic synchronization of invoices</li>
+            <li>Configure API keys for each company</li>
+            <li>Access your invoices through the dashboard</li>
+        </ul>
+        
+        <div class="alert alert-light mt-4">
+            <h6 class="alert-heading"><i class="bi bi-question-circle"></i> Need Help?</h6>
+            <p class="mb-0">If you encounter any issues during registration or connection, please refer to:</p>
+            <ul class="mb-0">
+                <li>ANAF's official documentation and support channels</li>
+                <li>Contact ANAF support for questions about application registration</li>
+                <li>Ensure your Redirect URI is correctly configured in both ANAF and this application</li>
+            </ul>
+        </div>
+    </div>
+</div>
+{% endblock %}
+

@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - eFactura Gateway{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">Dashboard</h1>
+    {% if selected_company %}
+        <form method="POST" action="{{ url_for('anaf.sync_company', company_id=selected_company.id) }}" class="d-inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+            <button type="submit" class="btn btn-primary">
+                <i class="bi bi-arrow-clockwise"></i> Sync Invoices
+            </button>
+        </form>
+    {% endif %}
+</div>
+
+{% if not companies %}
+    <div class="card">
+        <div class="card-body text-center py-5">
+            <i class="bi bi-building" style="font-size: 3rem; color: #ccc;"></i>
+            <h4 class="mt-3">No Companies Found</h4>
+            <p class="text-muted">Connect your ANAF account to get started.</p>
+            <a href="{{ url_for('anaf.connect') }}" class="btn btn-primary mt-2">
+                <i class="bi bi-link-45deg"></i> Connect ANAF Account
+            </a>
+        </div>
+    </div>
+{% elif not selected_company %}
+    <div class="card">
+        <div class="card-body text-center py-5">
+            <i class="bi bi-exclamation-circle" style="font-size: 3rem; color: #ccc;"></i>
+            <h4 class="mt-3">No Company Selected</h4>
+            <p class="text-muted">Please select a company from the dropdown above.</p>
+        </div>
+    </div>
+{% else %}
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">Invoices - {{ selected_company.name }}</h5>
+        </div>
+        <div class="card-body">
+            {% if invoices.items %}
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>ANAF ID</th>
+                                <th>Supplier</th>
+                                <th>Supplier CIF</th>
+                                <th>Date</th>
+                                <th>Total Amount</th>
+                                <th>Synced At</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for invoice in invoices.items %}
+                            <tr>
+                                <td><code>{{ invoice.anaf_id }}</code></td>
+                                <td>{{ invoice.supplier_name or '-' }}</td>
+                                <td>{{ invoice.supplier_cif or '-' }}</td>
+                                <td>{{ invoice.invoice_date.strftime('%Y-%m-%d') if invoice.invoice_date else '-' }}</td>
+                                <td>
+                                    {% if invoice.total_amount %}
+                                        {{ "%.2f"|format(invoice.total_amount) }} RON
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </td>
+                                <td>{{ invoice.synced_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                
+                <!-- Pagination -->
+                {% if invoices.pages > 1 %}
+                <nav aria-label="Invoice pagination">
+                    <ul class="pagination justify-content-center">
+                        {% if invoices.has_prev %}
+                            <li class="page-item">
+                                <a class="page-link" href="?page={{ invoices.prev_num }}">Previous</a>
+                            </li>
+                        {% else %}
+                            <li class="page-item disabled">
+                                <span class="page-link">Previous</span>
+                            </li>
+                        {% endif %}
+                        
+                        {% for page_num in invoices.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+                            {% if page_num %}
+                                {% if page_num == invoices.page %}
+                                    <li class="page-item active">
+                                        <span class="page-link">{{ page_num }}</span>
+                                    </li>
+                                {% else %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page={{ page_num }}">{{ page_num }}</a>
+                                    </li>
+                                {% endif %}
+                            {% else %}
+                                <li class="page-item disabled">
+                                    <span class="page-link">...</span>
+                                </li>
+                            {% endif %}
+                        {% endfor %}
+                        
+                        {% if invoices.has_next %}
+                            <li class="page-item">
+                                <a class="page-link" href="?page={{ invoices.next_num }}">Next</a>
+                            </li>
+                        {% else %}
+                            <li class="page-item disabled">
+                                <span class="page-link">Next</span>
+                            </li>
+                        {% endif %}
+                    </ul>
+                </nav>
+                {% endif %}
+            {% else %}
+                <div class="text-center py-5">
+                    <i class="bi bi-inbox" style="font-size: 3rem; color: #ccc;"></i>
+                    <p class="text-muted mt-3">No invoices found for this company.</p>
+                    <form method="POST" action="{{ url_for('anaf.sync_company', company_id=selected_company.id) }}" class="d-inline">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-arrow-clockwise"></i> Sync Now
+                        </button>
+                    </form>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+{% endif %}
+{% endblock %}
+
