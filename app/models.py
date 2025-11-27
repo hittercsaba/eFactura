@@ -43,7 +43,7 @@ class AnafOAuthConfig(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), unique=True, nullable=False)
     client_id = db.Column(db.String(255), nullable=False)
-    client_secret = db.Column(db.String(255), nullable=False)
+    client_secret = db.Column(db.String(500), nullable=False)  # Increased to 500 to accommodate encrypted data
     redirect_uri = db.Column(db.String(500), nullable=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     
