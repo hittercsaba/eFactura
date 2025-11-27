@@ -20,7 +20,6 @@ class User(UserMixin, db.Model):
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     
     # Relationships
-    oauth_config = relationship('AnafOAuthConfig', back_populates='user', uselist=False)
     anaf_token = relationship('AnafToken', back_populates='user', uselist=False)
     companies = relationship('Company', back_populates='user', cascade='all, delete-orphan')
     
@@ -37,21 +36,21 @@ class User(UserMixin, db.Model):
 
 
 class AnafOAuthConfig(db.Model):
-    """OAuth configuration per user/client"""
+    """System-wide OAuth configuration - managed by admin only"""
     __tablename__ = 'anaf_oauth_configs'
     
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), unique=True, nullable=False)
     client_id = db.Column(db.String(255), nullable=False)
-    client_secret = db.Column(db.String(500), nullable=False)  # Increased to 500 to accommodate encrypted data
+    client_secret = db.Column(db.String(500), nullable=False)  # Encrypted
     redirect_uri = db.Column(db.String(500), nullable=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
-    # Relationships
-    user = relationship('User', back_populates='oauth_config')
+    # Track who created/modified this config
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     
     def __repr__(self):
-        return f'<AnafOAuthConfig user_id={self.user_id}>'
+        return f'<AnafOAuthConfig id={self.id}>'
 
 
 class AnafToken(db.Model):

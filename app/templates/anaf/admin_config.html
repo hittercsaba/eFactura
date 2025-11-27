@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+
+{% block title %}ANAF OAuth Configuration{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-8 mx-auto">
+            <div class="card">
+                <div class="card-header">
+                    <h4 class="mb-0">
+                        <i class="bi bi-shield-lock me-2"></i>
+                        ANAF OAuth Configuration (Admin Only)
+                    </h4>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-2"></i>
+                        <strong>System-Wide Configuration:</strong> This OAuth configuration is shared by all users. 
+                        Each user will authenticate with their own digital certificate to get individual access tokens.
+                    </div>
+
+                    {% if oauth_config %}
+                    <div class="alert alert-success">
+                        <i class="bi bi-check-circle me-2"></i>
+                        OAuth configuration exists. You can update it below.
+                        <br><small>Last updated: {{ oauth_config.updated_at.strftime('%Y-%m-%d %H:%M UTC') if oauth_config.updated_at else 'Never' }}</small>
+                    </div>
+                    {% else %}
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        No OAuth configuration found. Please configure it below.
+                    </div>
+                    {% endif %}
+
+                    <form method="POST" action="{{ url_for('anaf.admin_config') }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                        
+                        <div class="mb-3">
+                            <label for="client_id" class="form-label">Client ID *</label>
+                            <input type="text" 
+                                   class="form-control" 
+                                   id="client_id" 
+                                   name="client_id" 
+                                   value="{{ oauth_config.client_id if oauth_config else '' }}"
+                                   required 
+                                   maxlength="255">
+                            <div class="form-text">
+                                From ANAF Developer Portal: 
+                                <a href="https://www.anaf.ro/InregOauth" target="_blank">
+                                    https://www.anaf.ro/InregOauth
+                                </a>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="client_secret" class="form-label">
+                                Client Secret {% if oauth_config %}(leave blank to keep current){% else %}*{% endif %}
+                            </label>
+                            <input type="password" 
+                                   class="form-control" 
+                                   id="client_secret" 
+                                   name="client_secret" 
+                                   {% if not oauth_config %}required{% endif %}
+                                   maxlength="255"
+                                   autocomplete="new-password">
+                            {% if oauth_config %}
+                            <div class="form-text">
+                                <i class="bi bi-shield-check text-success"></i>
+                                Current secret is encrypted and stored securely. Only enter a new value if you need to update it.
+                            </div>
+                            {% else %}
+                            <div class="form-text">
+                                From ANAF Developer Portal. This will be encrypted before storage.
+                            </div>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="redirect_uri" class="form-label">Redirect URI *</label>
+                            <input type="text" 
+                                   class="form-control" 
+                                   id="redirect_uri" 
+                                   name="redirect_uri" 
+                                   value="{{ oauth_config.redirect_uri if oauth_config else get_base_url() + '/anaf/callback' }}"
+                                   required 
+                                   maxlength="500">
+                            <div class="form-text">
+                                <strong>Suggested:</strong> <code>{{ get_base_url() }}/anaf/callback</code>
+                                <br>
+                                <span class="text-danger">
+                                    <i class="bi bi-exclamation-triangle"></i>
+                                    This MUST exactly match the callback URL registered in ANAF portal (including protocol: http/https).
+                                </span>
+                            </div>
+                        </div>
+
+                        <hr>
+
+                        <h6 class="mb-3">ANAF OAuth Endpoints (for reference)</h6>
+                        <ul class="list-unstyled small text-muted">
+                            <li><strong>Authorization:</strong> <code>https://logincert.anaf.ro/anaf-oauth2/v1/authorize</code></li>
+                            <li><strong>Token:</strong> <code>https://logincert.anaf.ro/anaf-oauth2/v1/token</code></li>
+                            <li><strong>Revoke:</strong> <code>https://logincert.anaf.ro/anaf-oauth2/v1/revoke</code></li>
+                        </ul>
+
+                        <hr>
+
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-save me-2"></i>
+                                Save Configuration
+                            </button>
+                            <a href="{{ url_for('dashboard.index') }}" class="btn btn-secondary">
+                                <i class="bi bi-arrow-left me-2"></i>
+                                Back to Dashboard
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Instructions Card -->
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-book me-2"></i>Setup Instructions</h5>
+                </div>
+                <div class="card-body">
+                    <h6>1. Register Your Application in ANAF Portal</h6>
+                    <ol class="small">
+                        <li>Go to <a href="https://www.anaf.ro/InregOauth" target="_blank">ANAF Developer Portal</a></li>
+                        <li>Login with your administrator digital certificate</li>
+                        <li>Register a new application with the callback URL: <code>{{ get_base_url() }}/anaf/callback</code></li>
+                        <li>Copy the generated Client ID and Client Secret</li>
+                    </ol>
+
+                    <h6 class="mt-3">2. Configure This Application</h6>
+                    <ol class="small">
+                        <li>Paste the Client ID and Client Secret in the form above</li>
+                        <li>Verify the Redirect URI matches what you registered in ANAF</li>
+                        <li>Click "Save Configuration"</li>
+                    </ol>
+
+                    <h6 class="mt-3">3. User Authentication</h6>
+                    <p class="small mb-0">
+                        After configuration, each user can connect to ANAF using the "Connect to ANAF" button on their dashboard. 
+                        They will authenticate with their own digital certificate to get individual access tokens.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+

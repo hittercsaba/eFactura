@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+
+{% block title %}ANAF Connection Test{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-10 mx-auto">
+            <div class="card">
+                <div class="card-header bg-warning text-dark">
+                    <h4 class="mb-0">
+                        <i class="bi bi-bug"></i>
+                        ANAF OAuth Connection Diagnostics
+                    </h4>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info">
+                        <strong>Purpose:</strong> This page helps diagnose why ANAF OAuth is failing.
+                        The error is happening in less than 300ms, which means ANAF is rejecting the request immediately.
+                    </div>
+
+                    <h5 class="mt-4">Test 1: Can Your Browser Access Certificate-Protected Sites?</h5>
+                    <p>Click the button below to test if your browser can connect to ANAF's certificate server:</p>
+                    <a href="https://logincert.anaf.ro/" target="_blank" class="btn btn-primary mb-3">
+                        <i class="bi bi-shield-lock"></i> Test ANAF Certificate Server
+                    </a>
+                    <div class="alert alert-secondary">
+                        <strong>Expected Results:</strong>
+                        <ul class="mb-0">
+                            <li>✅ <strong>Browser prompts for certificate</strong> → Good! Your browser is configured correctly.</li>
+                            <li>⚠️ <strong>404 or error page</strong> → Connection works, but endpoint doesn't exist (that's OK).</li>
+                            <li>❌ <strong>Connection timeout or SSL error</strong> → Your browser can't connect to certificate-protected sites.</li>
+                        </ul>
+                    </div>
+
+                    <hr>
+
+                    <h5 class="mt-4">Test 2: OAuth Configuration Status</h5>
+                    <div class="table-responsive">
+                        <table class="table table-bordered">
+                            <tr>
+                                <th>Client ID</th>
+                                <td><code>{{ oauth_config.client_id if oauth_config else 'Not configured' }}</code></td>
+                            </tr>
+                            <tr>
+                                <th>Redirect URI</th>
+                                <td><code>{{ oauth_config.redirect_uri if oauth_config else 'Not configured' }}</code></td>
+                            </tr>
+                            <tr>
+                                <th>Config Status</th>
+                                <td>
+                                    {% if oauth_config %}
+                                        <span class="badge bg-success">Configured</span>
+                                    {% else %}
+                                        <span class="badge bg-danger">Not Configured</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        </table>
+                    </div>
+
+                    <hr>
+
+                    <h5 class="mt-4">Test 3: Check ANAF Portal</h5>
+                    <p>Verify your application status in the ANAF Developer Portal:</p>
+                    <ol>
+                        <li>Go to: <a href="https://www.anaf.ro/InregOauth" target="_blank">ANAF Developer Portal</a></li>
+                        <li>Login with your <strong>administrator certificate</strong></li>
+                        <li>Find your application: <strong>eFactura_Gateway</strong></li>
+                        <li>Check if the status is <strong>"Active"</strong></li>
+                        <li>Verify the Client ID matches: <code>{{ oauth_config.client_id if oauth_config else 'N/A' }}</code></li>
+                        <li>Verify callback URLs include: <code>{{ oauth_config.redirect_uri if oauth_config else 'N/A' }}</code></li>
+                    </ol>
+
+                    <hr>
+
+                    <h5 class="mt-4">Test 4: Manual OAuth URL Test</h5>
+                    <p>Click below to manually try the OAuth flow. Watch carefully what happens:</p>
+                    
+                    {% if oauth_config %}
+                    <a href="https://logincert.anaf.ro/anaf-oauth2/v1/authorize?client_id={{ oauth_config.client_id }}&redirect_uri={{ oauth_config.redirect_uri | urlencode }}&response_type=code&state=MANUAL_TEST_{{ range(1000, 9999) | random }}" 
+                       class="btn btn-warning btn-lg mb-3" 
+                       target="_blank">
+                        <i class="bi bi-box-arrow-up-right"></i> Manually Test OAuth Flow
+                    </a>
+                    
+                    <div class="alert alert-warning">
+                        <strong>What to observe:</strong>
+                        <ul class="mb-0">
+                            <li>Does a new tab open?</li>
+                            <li>Do you see ANAF's page, or does it immediately redirect back?</li>
+                            <li>Does your browser prompt for a certificate?</li>
+                            <li>What error message do you see (if any)?</li>
+                        </ul>
+                    </div>
+                    {% else %}
+                    <div class="alert alert-danger">
+                        OAuth is not configured. Please configure it first.
+                    </div>
+                    {% endif %}
+
+                    <hr>
+
+                    <h5 class="mt-4">Common Issues & Solutions</h5>
+                    
+                    <div class="accordion" id="solutionsAccordion">
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#solution1">
+                                    Issue 1: Browser doesn't have a certificate
+                                </button>
+                            </h2>
+                            <div id="solution1" class="accordion-collapse collapse show" data-bs-parent="#solutionsAccordion">
+                                <div class="accordion-body">
+                                    <strong>Symptom:</strong> Connection to logincert.anaf.ro fails or times out.<br>
+                                    <strong>Solution:</strong>
+                                    <ol>
+                                        <li>Install a qualified digital certificate in your browser</li>
+                                        <li>The certificate must be from an accredited provider</li>
+                                        <li>The certificate must be registered in ANAF's SPV system</li>
+                                    </ol>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#solution2">
+                                    Issue 2: Application not approved in ANAF portal
+                                </button>
+                            </h2>
+                            <div id="solution2" class="accordion-collapse collapse" data-bs-parent="#solutionsAccordion">
+                                <div class="accordion-body">
+                                    <strong>Symptom:</strong> ANAF returns access_denied immediately.<br>
+                                    <strong>Solution:</strong>
+                                    <ol>
+                                        <li>Check application status at <a href="https://www.anaf.ro/InregOauth" target="_blank">ANAF Portal</a></li>
+                                        <li>Ensure application is "Active" (not "Pending")</li>
+                                        <li>Contact ANAF support if application is stuck in pending state</li>
+                                    </ol>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#solution3">
+                                    Issue 3: Redirect URI mismatch
+                                </button>
+                            </h2>
+                            <div id="solution3" class="accordion-collapse collapse" data-bs-parent="#solutionsAccordion">
+                                <div class="accordion-body">
+                                    <strong>Symptom:</strong> ANAF returns access_denied without showing certificate dialog.<br>
+                                    <strong>Solution:</strong>
+                                    <ol>
+                                        <li>Verify redirect URI in OAuth config matches EXACTLY what's registered in ANAF</li>
+                                        <li>Check protocol (http vs https)</li>
+                                        <li>Check domain spelling</li>
+                                        <li>Check path (/anaf/callback)</li>
+                                        <li>Try using the primary callback URL from ANAF registration</li>
+                                    </ol>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#solution4">
+                                    Issue 4: Client credentials incorrect
+                                </button>
+                            </h2>
+                            <div id="solution4" class="accordion-collapse collapse" data-bs-parent="#solutionsAccordion">
+                                <div class="accordion-body">
+                                    <strong>Symptom:</strong> OAuth fails with invalid_client or similar errors.<br>
+                                    <strong>Solution:</strong>
+                                    <ol>
+                                        <li>Double-check Client ID and Client Secret from ANAF portal</li>
+                                        <li>Ensure no extra spaces or characters</li>
+                                        <li>Re-enter the credentials in OAuth config</li>
+                                    </ol>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <hr>
+
+                    <div class="d-grid gap-2 mt-4">
+                        <a href="{{ url_for('dashboard.index') }}" class="btn btn-secondary">
+                            <i class="bi bi-arrow-left"></i> Back to Dashboard
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+

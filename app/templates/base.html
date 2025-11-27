@@ -145,6 +145,17 @@
                 </a>
             </li>
             {% if current_user.is_authenticated and current_user.is_admin %}
+            <li class="mt-3">
+                <div class="px-3 py-2 text-uppercase small text-muted" style="opacity: 0.7;">
+                    Admin
+                </div>
+            </li>
+            <li>
+                <a href="{{ url_for('anaf.admin_config') }}" class="nav-link {% if request.endpoint == 'anaf.admin_config' %}active{% endif %}">
+                    <i class="bi bi-shield-lock"></i>
+                    <span>ANAF OAuth Config</span>
+                </a>
+            </li>
             <li>
                 <a href="{{ url_for('users.index') }}" class="nav-link {% if request.endpoint.startswith('users') %}active{% endif %}">
                     <i class="bi bi-people"></i>

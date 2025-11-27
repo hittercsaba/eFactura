@@ -14,8 +14,14 @@ def index():
     # Get user's companies
     companies = Company.query.filter_by(user_id=current_user.id).all()
     
+    # If no companies, show empty state (don't auto-redirect)
     if not companies:
-        return redirect(url_for('anaf.connect'))
+        return render_template(
+            'dashboard.html',
+            companies=[],
+            selected_company=None,
+            invoices=None
+        )
     
     # Get selected company from session or default to first
     selected_company_id = session.get('selected_company_id')

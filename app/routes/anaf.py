@@ -30,60 +30,67 @@ def get_base_url():
 
 anaf_bp = Blueprint('anaf', __name__)
 
-@anaf_bp.route('/connect', methods=['GET', 'POST'])
+@anaf_bp.route('/test')
+@login_required
+def test_connection():
+    """Test page for diagnosing ANAF OAuth connection issues"""
+    oauth_config = AnafOAuthConfig.query.first()
+    return render_template('anaf/test_connection.html', oauth_config=oauth_config)
+
+@anaf_bp.route('/admin/config', methods=['GET', 'POST'])
 @login_required
 @approved_required
-def connect():
-    """Connect ANAF account - OAuth configuration and initiation"""
+def admin_config():
+    """Admin-only: Configure system-wide ANAF OAuth settings"""
+    if not current_user.is_admin:
+        flash('Only administrators can configure ANAF OAuth settings.', 'error')
+        return redirect(url_for('dashboard.index'))
+    
     if request.method == 'POST':
         client_id = request.form.get('client_id', '').strip()
         client_secret = request.form.get('client_secret', '').strip()
         redirect_uri = request.form.get('redirect_uri', '').strip()
         
-        # Check if this is an update (config exists) or new registration
-        oauth_config = AnafOAuthConfig.query.filter_by(user_id=current_user.id).first()
+        # Get system-wide OAuth config (should be only one)
+        oauth_config = AnafOAuthConfig.query.first()
         is_update = oauth_config is not None
         
         # Input validation
         if not client_id or not redirect_uri:
             flash('Client ID and Redirect URI are required.', 'error')
-            return render_template('anaf/connect.html', oauth_config=oauth_config)
+            return render_template('anaf/admin_config.html', oauth_config=oauth_config)
         
         # For new config, client_secret is required
         # For update, it's optional (only update if provided)
         if not is_update and not client_secret:
             flash('Client Secret is required for new OAuth configuration.', 'error')
-            return render_template('anaf/connect.html', oauth_config=oauth_config)
+            return render_template('anaf/admin_config.html', oauth_config=oauth_config)
         
         # Validate lengths
         if len(client_id) > 255:
             flash('Client ID is too long.', 'error')
-            return render_template('anaf/connect.html')
+            return render_template('anaf/admin_config.html', oauth_config=oauth_config)
         
         if client_secret and len(client_secret) > 255:
             flash('Client secret is too long.', 'error')
-            return render_template('anaf/connect.html', oauth_config=oauth_config)
+            return render_template('anaf/admin_config.html', oauth_config=oauth_config)
         
         if len(redirect_uri) > 500:
             flash('Redirect URI is too long.', 'error')
-            return render_template('anaf/connect.html')
+            return render_template('anaf/admin_config.html', oauth_config=oauth_config)
         
         # Validate redirect_uri format
         try:
             parsed = urlparse(redirect_uri)
             if not parsed.scheme or not parsed.netloc:
                 flash('Invalid redirect URI format.', 'error')
-                return render_template('anaf/connect.html', oauth_config=oauth_config)
+                return render_template('anaf/admin_config.html', oauth_config=oauth_config)
             if parsed.scheme not in ('http', 'https'):
                 flash('Redirect URI must use http or https.', 'error')
-                return render_template('anaf/connect.html', oauth_config=oauth_config)
-            
-            # Warn if using HTTP in production
-            if parsed.scheme == 'http' and current_app.config.get('FLASK_ENV') == 'production':
-                flash('Warning: Using HTTP in production is not recommended. Consider using HTTPS.', 'warning')
+                return render_template('anaf/admin_config.html', oauth_config=oauth_config)
         except Exception:
             flash('Invalid redirect URI format.', 'error')
-            return render_template('anaf/connect.html', oauth_config=oauth_config)
+            return render_template('anaf/admin_config.html', oauth_config=oauth_config)
         
         # Encrypt client_secret before storing (only if provided)
         from app.utils.encryption import encrypt_data
@@ -94,63 +101,83 @@ def connect():
             # Only update client_secret if a new one is provided
             if client_secret:
                 encrypted_secret = encrypt_data(client_secret)
+                if not encrypted_secret:
+                    flash('Error encrypting client secret.', 'error')
+                    return render_template('anaf/admin_config.html', oauth_config=oauth_config)
                 oauth_config.client_secret = encrypted_secret
             oauth_config.redirect_uri = redirect_uri
         else:
             # Create new config (client_secret required)
             encrypted_secret = encrypt_data(client_secret)
+            if not encrypted_secret:
+                flash('Error encrypting client secret.', 'error')
+                return render_template('anaf/admin_config.html')
             oauth_config = AnafOAuthConfig(
-                user_id=current_user.id,
                 client_id=client_id,
                 client_secret=encrypted_secret,
-                redirect_uri=redirect_uri
+                redirect_uri=redirect_uri,
+                created_by=current_user.id
             )
             db.session.add(oauth_config)
         
         try:
             db.session.commit()
-            
-            # Generate state for OAuth flow
-            state = secrets.token_urlsafe(32)
-            session['oauth_state'] = state
-            
-            # Get authorization URL
-            oauth_service = OAuthService(current_user.id)
-            auth_url = oauth_service.get_authorization_url(state=state)
-            
-            # Log OAuth configuration details
-            current_app.logger.info(f"=== OAUTH CONFIG SAVED FOR USER {current_user.id} ===")
-            current_app.logger.info(f"Client ID: {client_id}")
-            current_app.logger.info(f"Client Secret Updated: {bool(client_secret)}")
-            current_app.logger.info(f"Redirect URI: {redirect_uri}")
-            current_app.logger.info(f"OAuth State: {state}")
-            current_app.logger.info(f"Redirecting to: {auth_url[:100]}...")
-            current_app.logger.info("=" * 60)
-            
-            flash('OAuth configuration saved. Redirecting to ANAF...', 'success')
-            return redirect(auth_url)
+            current_app.logger.info(f"OAuth config {'updated' if is_update else 'created'} by admin user {current_user.id}")
+            flash('ANAF OAuth configuration saved successfully.', 'success')
+            return redirect(url_for('anaf.admin_config'))
             
         except Exception as e:
             db.session.rollback()
             current_app.logger.error(f"Error saving OAuth config: {str(e)}")
             flash('An error occurred. Please try again.', 'error')
-            return render_template('anaf/connect.html')
+            return render_template('anaf/admin_config.html', oauth_config=oauth_config)
     
-    # Check if user already has OAuth config
-    oauth_config = AnafOAuthConfig.query.filter_by(user_id=current_user.id).first()
-    return render_template('anaf/connect.html', oauth_config=oauth_config)
+    # GET request - show the config form
+    oauth_config = AnafOAuthConfig.query.first()
+    return render_template('anaf/admin_config.html', oauth_config=oauth_config)
+
+@anaf_bp.route('/connect')
+@login_required
+@approved_required
+def connect():
+    """User: Connect to ANAF using their certificate"""
+    # Check if system OAuth config exists
+    oauth_config = AnafOAuthConfig.query.first()
+    
+    if not oauth_config:
+        flash('ANAF OAuth is not configured. Please contact your administrator.', 'error')
+        return redirect(url_for('dashboard.index'))
+    
+    # Generate state for OAuth flow
+    state = secrets.token_urlsafe(32)
+    session['oauth_state'] = state
+    session['oauth_user_id'] = current_user.id
+    
+    # Get authorization URL
+    oauth_service = OAuthService(current_user.id)
+    auth_url = oauth_service.get_authorization_url(state=state)
+    
+    # Log user authentication attempt
+    current_app.logger.info(f"User {current_user.id} ({current_user.email}) initiating ANAF authentication")
+    current_app.logger.info(f"Redirecting browser to: {auth_url}")
+    
+    # Direct redirect to ANAF (no template to avoid HTML encoding issues)
+    return redirect(auth_url)
 
 @anaf_bp.route('/callback')
 @login_required
 @approved_required
 def callback():
-    """OAuth callback handler"""
+    """OAuth callback handler - receives authorization code from ANAF"""
     code = request.args.get('code')
     state = request.args.get('state')
     error = request.args.get('error')
     
+    # Get user_id from session (set during connect)
+    user_id = session.get('oauth_user_id', current_user.id)
+    
     # Log callback details
-    current_app.logger.info(f"=== ANAF OAUTH CALLBACK FOR USER {current_user.id} ===")
+    current_app.logger.info(f"=== ANAF OAUTH CALLBACK FOR USER {user_id} ===")
     current_app.logger.info(f"Callback URL: {request.url}")
     current_app.logger.info(f"Has Authorization Code: {bool(code)}")
     if code:
@@ -165,7 +192,7 @@ def callback():
     if state != session.get('oauth_state'):
         current_app.logger.error(f"OAuth state mismatch! Expected: {session.get('oauth_state')}, Got: {state}")
         flash('Invalid OAuth state. Please try again.', 'error')
-        return redirect(url_for('anaf.connect'))
+        return redirect(url_for('dashboard.index'))
     
     if error:
         error_description = request.args.get('error_description', '')
@@ -177,15 +204,19 @@ def callback():
             f"error={error}, description={error_description}, uri={error_uri}"
         )
         
+        # Clear OAuth state to prevent loops
+        session.pop('oauth_state', None)
+        session.pop('oauth_user_id', None)
+        
         # Provide more helpful error messages
         if error == 'access_denied':
             error_msg = (
-                'Access was denied. This could be due to:\n'
-                '1. The user declined authorization\n'
-                '2. The redirect URI does not match what is registered with ANAF\n'
-                '3. The requested scopes are not authorized for your application\n'
-                '4. The client credentials are incorrect\n'
-                '5. The user does not have the required permissions in ANAF'
+                'ANAF access was denied. This could be due to:\n'
+                '1. You cancelled the certificate selection or declined authorization\n'
+                '2. The digital certificate is not registered in ANAF\'s SPV system\n'
+                '3. The redirect URI does not match what is registered with ANAF\n'
+                '4. You do not have access to e-Factura services\n'
+                '5. The OAuth configuration is incorrect'
             )
             if error_description:
                 error_msg += f'\n\nANAF Error: {error_description}'
@@ -195,21 +226,24 @@ def callback():
                 error_msg += f' - {error_description}'
         
         flash(error_msg, 'error')
-        return redirect(url_for('anaf.connect'))
+        return redirect(url_for('dashboard.index'))
     
     if not code:
-        flash('No authorization code received.', 'error')
-        return redirect(url_for('anaf.connect'))
+        flash('No authorization code received from ANAF.', 'error')
+        session.pop('oauth_state', None)
+        session.pop('oauth_user_id', None)
+        return redirect(url_for('dashboard.index'))
     
     try:
-        # Exchange code for token
-        oauth_service = OAuthService(current_user.id)
+        # Exchange code for token (using user_id from session)
+        oauth_service = OAuthService(user_id)
         token_data = oauth_service.exchange_code_for_token(code)
         
         flash('ANAF account connected successfully!', 'success')
         
-        # Clear OAuth state
+        # Clear OAuth state and user_id from session
         session.pop('oauth_state', None)
+        session.pop('oauth_user_id', None)
         
         # Try to discover companies
         try:
@@ -252,8 +286,10 @@ def callback():
         
     except Exception as e:
         current_app.logger.error(f"OAuth callback error: {str(e)}")
+        session.pop('oauth_state', None)
+        session.pop('oauth_user_id', None)
         flash(f'Error connecting ANAF account: {str(e)}', 'error')
-        return redirect(url_for('anaf.connect'))
+        return redirect(url_for('dashboard.index'))
 
 @anaf_bp.route('/sync/<int:company_id>', methods=['POST'])
 @login_required

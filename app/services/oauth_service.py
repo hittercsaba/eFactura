@@ -6,18 +6,24 @@ from app.models import db, AnafOAuthConfig, AnafToken, User
 from app.utils.encryption import encrypt_data, decrypt_data
 
 class OAuthService:
-    """Service for handling ANAF OAuth flow"""
+    """Service for handling ANAF OAuth flow
+    
+    OAuth config is system-wide (managed by admin).
+    Each user gets their own token by authenticating with their certificate.
+    """
     
     def __init__(self, user_id=None):
         self.user_id = user_id
         self.oauth_config = None
-        if user_id:
-            self.oauth_config = AnafOAuthConfig.query.filter_by(user_id=user_id).first()
-            # Decrypt client_secret if encrypted
-            if self.oauth_config and self.oauth_config.client_secret:
-                decrypted = decrypt_data(self.oauth_config.client_secret)
-                if decrypted:
-                    self.oauth_config.client_secret = decrypted
+        
+        # Get system-wide OAuth configuration (should be only one record)
+        self.oauth_config = AnafOAuthConfig.query.first()
+        
+        # Decrypt client_secret if encrypted
+        if self.oauth_config and self.oauth_config.client_secret:
+            decrypted = decrypt_data(self.oauth_config.client_secret)
+            if decrypted:
+                self.oauth_config.client_secret = decrypted
     
     def get_authorization_url(self, state=None):
         """Generate ANAF OAuth authorization URL"""
@@ -27,14 +33,15 @@ class OAuthService:
         auth_url = "https://logincert.anaf.ro/anaf-oauth2/v1/authorize"
         
         # ANAF OAuth2 parameters
-        # Note: ANAF may require specific scopes - adjust based on their documentation
+        # Per ANAF documentation: e-Factura service doesn't use OpenID Connect scopes
+        # Token is associated with the user's digital certificate, not profile/email
         params = {
             'client_id': self.oauth_config.client_id,
             'redirect_uri': self.oauth_config.redirect_uri,
             'response_type': 'code',
-            'scope': 'openid profile email',  # May need to be adjusted per ANAF requirements
             'state': state or 'default'
         }
+        # Note: Scope is omitted as ANAF e-Factura doesn't require it
         
         auth_url_full = f"{auth_url}?{urlencode(params)}"
         
@@ -44,7 +51,7 @@ class OAuthService:
         current_app.logger.info(f"Client ID: {self.oauth_config.client_id}")
         current_app.logger.info(f"Redirect URI: {self.oauth_config.redirect_uri}")
         current_app.logger.info(f"Response Type: code")
-        current_app.logger.info(f"Scope: openid profile email")
+        current_app.logger.info(f"Scope: (none - not required by ANAF)")
         current_app.logger.info(f"State: {state}")
         current_app.logger.info(f"Full Authorization URL: {auth_url_full}")
         current_app.logger.info("=" * 60)
