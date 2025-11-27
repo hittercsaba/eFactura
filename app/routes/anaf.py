@@ -40,19 +40,29 @@ def connect():
         client_secret = request.form.get('client_secret', '').strip()
         redirect_uri = request.form.get('redirect_uri', '').strip()
         
+        # Check if this is an update (config exists) or new registration
+        oauth_config = AnafOAuthConfig.query.filter_by(user_id=current_user.id).first()
+        is_update = oauth_config is not None
+        
         # Input validation
-        if not all([client_id, client_secret, redirect_uri]):
-            flash('All OAuth fields are required.', 'error')
-            return render_template('anaf/connect.html')
+        if not client_id or not redirect_uri:
+            flash('Client ID and Redirect URI are required.', 'error')
+            return render_template('anaf/connect.html', oauth_config=oauth_config)
+        
+        # For new config, client_secret is required
+        # For update, it's optional (only update if provided)
+        if not is_update and not client_secret:
+            flash('Client Secret is required for new OAuth configuration.', 'error')
+            return render_template('anaf/connect.html', oauth_config=oauth_config)
         
         # Validate lengths
         if len(client_id) > 255:
             flash('Client ID is too long.', 'error')
             return render_template('anaf/connect.html')
         
-        if len(client_secret) > 255:
+        if client_secret and len(client_secret) > 255:
             flash('Client secret is too long.', 'error')
-            return render_template('anaf/connect.html')
+            return render_template('anaf/connect.html', oauth_config=oauth_config)
         
         if len(redirect_uri) > 500:
             flash('Redirect URI is too long.', 'error')
@@ -75,18 +85,20 @@ def connect():
             flash('Invalid redirect URI format.', 'error')
             return render_template('anaf/connect.html', oauth_config=oauth_config)
         
-        # Encrypt client_secret before storing
+        # Encrypt client_secret before storing (only if provided)
         from app.utils.encryption import encrypt_data
-        encrypted_secret = encrypt_data(client_secret)
-        
-        # Save or update OAuth config
-        oauth_config = AnafOAuthConfig.query.filter_by(user_id=current_user.id).first()
         
         if oauth_config:
+            # Update existing config
             oauth_config.client_id = client_id
-            oauth_config.client_secret = encrypted_secret
+            # Only update client_secret if a new one is provided
+            if client_secret:
+                encrypted_secret = encrypt_data(client_secret)
+                oauth_config.client_secret = encrypted_secret
             oauth_config.redirect_uri = redirect_uri
         else:
+            # Create new config (client_secret required)
+            encrypted_secret = encrypt_data(client_secret)
             oauth_config = AnafOAuthConfig(
                 user_id=current_user.id,
                 client_id=client_id,

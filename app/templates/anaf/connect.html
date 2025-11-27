@@ -26,7 +26,11 @@
             <div class="mb-3">
                 <label for="client_secret" class="form-label">Client Secret <span class="text-danger">*</span></label>
                 <input type="password" class="form-control" id="client_secret" name="client_secret" 
-                       value="{{ oauth_config.client_secret if oauth_config else '' }}" required>
+                       placeholder="{% if oauth_config %}Enter to update or leave blank to keep current{% else %}Enter your client secret{% endif %}"
+                       {% if not oauth_config %}required{% endif %}>
+                {% if oauth_config %}
+                    <small class="text-muted">Leave blank to keep the current secret, or enter a new one to update it.</small>
+                {% endif %}
             </div>
             
             <div class="mb-3">

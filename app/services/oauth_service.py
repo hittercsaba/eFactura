@@ -49,13 +49,18 @@ class OAuthService:
         
         token_url = "https://logincert.anaf.ro/anaf-oauth2/v1/token"
         
-        # Try form-encoded data first (standard OAuth2)
+        # Per ANAF documentation: Use Basic Authentication with client credentials
+        # and form-encoded data for grant type and code
+        from requests.auth import HTTPBasicAuth
+        
+        # Basic Auth with client_id and client_secret
+        auth = HTTPBasicAuth(self.oauth_config.client_id, self.oauth_config.client_secret)
+        
+        # Form data with grant_type, code, and redirect_uri
         data = {
             'grant_type': 'authorization_code',
             'code': code,
-            'redirect_uri': self.oauth_config.redirect_uri,
-            'client_id': self.oauth_config.client_id,
-            'client_secret': self.oauth_config.client_secret
+            'redirect_uri': self.oauth_config.redirect_uri
         }
         
         # Headers for form-encoded request
@@ -64,13 +69,14 @@ class OAuthService:
             'Accept': 'application/json'
         }
         
+        current_app.logger.info(f"Exchanging authorization code for token for user {self.user_id}")
+        current_app.logger.debug(f"Token URL: {token_url}")
+        current_app.logger.debug(f"Redirect URI: {self.oauth_config.redirect_uri}")
+        current_app.logger.debug(f"Client ID: {self.oauth_config.client_id}")
+        current_app.logger.debug(f"Using Basic Auth: Yes")
+        
         try:
-            current_app.logger.info(f"Exchanging authorization code for token for user {self.user_id}")
-            current_app.logger.debug(f"Token URL: {token_url}")
-            current_app.logger.debug(f"Redirect URI: {self.oauth_config.redirect_uri}")
-            current_app.logger.debug(f"Client ID: {self.oauth_config.client_id}")
-            
-            response = requests.post(token_url, data=data, headers=headers, timeout=30)
+            response = requests.post(token_url, data=data, headers=headers, auth=auth, timeout=30)
             
             # Log response details for debugging
             current_app.logger.debug(f"Token exchange response status: {response.status_code}")
@@ -141,15 +147,17 @@ class OAuthService:
         
         token_url = "https://logincert.anaf.ro/anaf-oauth2/v1/token"
         
+        # Per ANAF documentation: Use Basic Authentication
+        from requests.auth import HTTPBasicAuth
+        auth = HTTPBasicAuth(self.oauth_config.client_id, self.oauth_config.client_secret)
+        
         data = {
             'grant_type': 'refresh_token',
-            'refresh_token': anaf_token.refresh_token,
-            'client_id': self.oauth_config.client_id,
-            'client_secret': self.oauth_config.client_secret
+            'refresh_token': anaf_token.refresh_token
         }
         
         try:
-            response = requests.post(token_url, data=data, timeout=30)
+            response = requests.post(token_url, data=data, auth=auth, timeout=30)
             response.raise_for_status()
             token_data = response.json()
             
