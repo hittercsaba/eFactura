@@ -118,11 +118,14 @@ def connect():
             oauth_service = OAuthService(current_user.id)
             auth_url = oauth_service.get_authorization_url(state=state)
             
-            # Log the authorization URL for debugging (without sensitive data)
-            current_app.logger.info(
-                f"Redirecting user {current_user.id} to ANAF authorization. "
-                f"Redirect URI: {redirect_uri}, State: {state[:8]}..."
-            )
+            # Log OAuth configuration details
+            current_app.logger.info(f"=== OAUTH CONFIG SAVED FOR USER {current_user.id} ===")
+            current_app.logger.info(f"Client ID: {client_id}")
+            current_app.logger.info(f"Client Secret Updated: {bool(client_secret)}")
+            current_app.logger.info(f"Redirect URI: {redirect_uri}")
+            current_app.logger.info(f"OAuth State: {state}")
+            current_app.logger.info(f"Redirecting to: {auth_url[:100]}...")
+            current_app.logger.info("=" * 60)
             
             flash('OAuth configuration saved. Redirecting to ANAF...', 'success')
             return redirect(auth_url)
@@ -146,8 +149,21 @@ def callback():
     state = request.args.get('state')
     error = request.args.get('error')
     
+    # Log callback details
+    current_app.logger.info(f"=== ANAF OAUTH CALLBACK FOR USER {current_user.id} ===")
+    current_app.logger.info(f"Callback URL: {request.url}")
+    current_app.logger.info(f"Has Authorization Code: {bool(code)}")
+    if code:
+        current_app.logger.info(f"Authorization Code: {code[:20]}...{code[-20:] if len(code) > 40 else ''}")
+    current_app.logger.info(f"State from ANAF: {state}")
+    current_app.logger.info(f"State in Session: {session.get('oauth_state')}")
+    current_app.logger.info(f"Error from ANAF: {error}")
+    current_app.logger.info(f"Error Description: {request.args.get('error_description', 'N/A')}")
+    current_app.logger.info("=" * 60)
+    
     # Verify state
     if state != session.get('oauth_state'):
+        current_app.logger.error(f"OAuth state mismatch! Expected: {session.get('oauth_state')}, Got: {state}")
         flash('Invalid OAuth state. Please try again.', 'error')
         return redirect(url_for('anaf.connect'))
     

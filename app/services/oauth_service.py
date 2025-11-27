@@ -37,8 +37,17 @@ class OAuthService:
         }
         
         auth_url_full = f"{auth_url}?{urlencode(params)}"
-        current_app.logger.info(f"Generated ANAF authorization URL for user {self.user_id}")
-        current_app.logger.debug(f"Authorization URL: {auth_url_full}")
+        
+        # Log detailed authorization request parameters
+        current_app.logger.info(f"=== ANAF AUTHORIZATION REQUEST FOR USER {self.user_id} ===")
+        current_app.logger.info(f"Authorization URL: {auth_url}")
+        current_app.logger.info(f"Client ID: {self.oauth_config.client_id}")
+        current_app.logger.info(f"Redirect URI: {self.oauth_config.redirect_uri}")
+        current_app.logger.info(f"Response Type: code")
+        current_app.logger.info(f"Scope: openid profile email")
+        current_app.logger.info(f"State: {state}")
+        current_app.logger.info(f"Full Authorization URL: {auth_url_full}")
+        current_app.logger.info("=" * 60)
         
         return auth_url_full
     
@@ -69,11 +78,17 @@ class OAuthService:
             'Accept': 'application/json'
         }
         
-        current_app.logger.info(f"Exchanging authorization code for token for user {self.user_id}")
-        current_app.logger.debug(f"Token URL: {token_url}")
-        current_app.logger.debug(f"Redirect URI: {self.oauth_config.redirect_uri}")
-        current_app.logger.debug(f"Client ID: {self.oauth_config.client_id}")
-        current_app.logger.debug(f"Using Basic Auth: Yes")
+        # Log detailed token exchange request
+        current_app.logger.info(f"=== ANAF TOKEN EXCHANGE REQUEST FOR USER {self.user_id} ===")
+        current_app.logger.info(f"Token URL: {token_url}")
+        current_app.logger.info(f"Grant Type: authorization_code")
+        current_app.logger.info(f"Authorization Code: {code[:20]}...{code[-20:] if len(code) > 40 else ''}")
+        current_app.logger.info(f"Redirect URI: {self.oauth_config.redirect_uri}")
+        current_app.logger.info(f"Client ID: {self.oauth_config.client_id}")
+        current_app.logger.info(f"Client Secret: {'*' * 20} (length: {len(self.oauth_config.client_secret)})")
+        current_app.logger.info(f"Authentication Method: HTTP Basic Auth")
+        current_app.logger.info(f"Content-Type: {headers['Content-Type']}")
+        current_app.logger.info("=" * 60)
         
         try:
             response = requests.post(token_url, data=data, headers=headers, auth=auth, timeout=30)
