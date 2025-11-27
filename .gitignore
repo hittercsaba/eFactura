@@ -42,9 +42,9 @@ instance/
 *.db
 *.sqlite3
 
-# Migrations (keep structure, ignore versions)
-migrations/versions/*.py
-!migrations/versions/.gitkeep
+# Migrations - IMPORTANT: Track migration files for production deployment
+# migrations/versions/*.py
+# !migrations/versions/.gitkeep
 
 # OS
 .DS_Store
