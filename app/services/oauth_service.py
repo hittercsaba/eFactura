@@ -208,9 +208,12 @@ class OAuthService:
             raise ValueError("No ANAF token found for user")
         
         # Check if token is expired or about to expire (within 5 minutes)
+        token_expiry = anaf_token.token_expiry
+        if token_expiry and token_expiry.tzinfo is None:
+            token_expiry = token_expiry.replace(tzinfo=timezone.utc)
+        
         if anaf_token.is_expired() or \
-           (anaf_token.token_expiry and 
-            (anaf_token.token_expiry - datetime.now(timezone.utc)).total_seconds() < 300):
+           (token_expiry and (token_expiry - datetime.now(timezone.utc)).total_seconds() < 300):
             try:
                 self.refresh_access_token()
                 # Reload token from DB

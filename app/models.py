@@ -71,7 +71,13 @@ class AnafToken(db.Model):
         """Check if token is expired"""
         if not self.token_expiry:
             return False
-        return datetime.now(timezone.utc) >= self.token_expiry
+        
+        # Ensure token_expiry is timezone-aware
+        token_expiry = self.token_expiry
+        if token_expiry.tzinfo is None:
+            token_expiry = token_expiry.replace(tzinfo=timezone.utc)
+        
+        return datetime.now(timezone.utc) >= token_expiry
     
     def __repr__(self):
         return f'<AnafToken user_id={self.user_id}>'

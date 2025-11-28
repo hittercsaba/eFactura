@@ -131,6 +131,10 @@ def sync_all_companies():
                 .scalar()
             
             if last_sync:
+                # Ensure last_sync is timezone-aware
+                if last_sync.tzinfo is None:
+                    last_sync = last_sync.replace(tzinfo=timezone.utc)
+                
                 hours_since_sync = (datetime.now(timezone.utc) - last_sync).total_seconds() / 3600
                 if hours_since_sync < company.sync_interval_hours:
                     continue  # Skip if within sync interval
