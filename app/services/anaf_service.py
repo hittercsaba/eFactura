@@ -36,6 +36,13 @@ class ANAFService:
             'cif': cif
         }
         
+        # Log request details
+        current_app.logger.info(f"=== ANAF API REQUEST: Lista Mesaje Factura ===")
+        current_app.logger.info(f"URL: {url}")
+        current_app.logger.info(f"CIF: {cif}")
+        current_app.logger.info(f"Zile: {zile}")
+        current_app.logger.info(f"Full URL: {url}?zile={zile}&cif={cif}")
+        
         try:
             response = requests.get(
                 url,
@@ -43,10 +50,26 @@ class ANAFService:
                 headers=self._get_headers(),
                 timeout=30
             )
+            
+            # Log response details
+            current_app.logger.info(f"Response Status: {response.status_code}")
+            current_app.logger.info(f"Response Headers: {dict(response.headers)}")
+            
             response.raise_for_status()
-            return response.json()
+            
+            # Parse and log response
+            response_data = response.json()
+            current_app.logger.info(f"Response Data Type: {type(response_data)}")
+            current_app.logger.info(f"Response Keys: {response_data.keys() if isinstance(response_data, dict) else 'N/A (list)'}")
+            current_app.logger.info(f"Response Data (first 500 chars): {str(response_data)[:500]}")
+            current_app.logger.info("=" * 60)
+            
+            return response_data
         except requests.exceptions.RequestException as e:
             current_app.logger.error(f"Error listing invoices for CIF {cif}: {str(e)}")
+            if hasattr(e, 'response') and e.response is not None:
+                current_app.logger.error(f"Error Response Status: {e.response.status_code}")
+                current_app.logger.error(f"Error Response Body: {e.response.text[:500]}")
             raise
     
     def descarcare_factura(self, invoice_id):

@@ -33,14 +33,27 @@ def sync_company_invoices(company_id):
                 current_app.logger.error(f"Error fetching invoice list for company {company_id}: {str(e)}")
                 return
             
+            # Log raw response for debugging
+            current_app.logger.info(f"=== PROCESSING INVOICE LIST FOR COMPANY {company_id} ===")
+            current_app.logger.info(f"Invoice list type: {type(invoice_list)}")
+            if isinstance(invoice_list, dict):
+                current_app.logger.info(f"Invoice list keys: {invoice_list.keys()}")
+                current_app.logger.info(f"Invoice list (first 300 chars): {str(invoice_list)[:300]}")
+            else:
+                current_app.logger.info(f"Invoice list length: {len(invoice_list) if isinstance(invoice_list, list) else 'N/A'}")
+            
             # Process invoice list (structure may vary)
             invoices_data = []
             if isinstance(invoice_list, dict):
                 invoices_data = invoice_list.get('listaMesajeFactura', []) or \
                               invoice_list.get('data', []) or \
-                              invoice_list.get('invoices', [])
+                              invoice_list.get('invoices', []) or \
+                              invoice_list.get('mesaje', [])
             elif isinstance(invoice_list, list):
                 invoices_data = invoice_list
+            
+            current_app.logger.info(f"Extracted {len(invoices_data)} invoices from response")
+            current_app.logger.info("=" * 60)
             
             synced_count = 0
             for invoice_item in invoices_data:
