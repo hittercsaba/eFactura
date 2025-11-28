@@ -11,7 +11,8 @@ class Config:
     SQLALCHEMY_DATABASE_URI = database_url
     
     # ANAF API configuration
-    ANAF_API_BASE_URL = os.environ.get('ANAF_API_BASE_URL') or 'https://api.anaf.ro'
+    # Use SPV webservices endpoint for e-Factura API
+    ANAF_API_BASE_URL = os.environ.get('ANAF_API_BASE_URL') or 'https://webservicesp.anaf.ro'
     
     # Session configuration
     SESSION_COOKIE_SECURE = os.environ.get('FLASK_ENV') == 'production'

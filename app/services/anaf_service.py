@@ -8,7 +8,8 @@ class ANAFService:
     def __init__(self, user_id):
         self.user_id = user_id
         self.oauth_service = OAuthService(user_id)
-        self.base_url = current_app.config.get('ANAF_API_BASE_URL', 'https://api.anaf.ro')
+        # Use SPV webservices endpoint, not generic API endpoint
+        self.base_url = current_app.config.get('ANAF_API_BASE_URL', 'https://webservicesp.anaf.ro')
     
     def _get_headers(self):
         """Get headers with authorization token"""
