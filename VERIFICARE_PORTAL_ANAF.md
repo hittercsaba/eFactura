@@ -186,3 +186,4 @@ Eroarea `error="invalid_token"` de obicei înseamnă:
 
 **NU înseamnă** că token-ul a expirat (avem 90 zile valabilitate).
 
+
