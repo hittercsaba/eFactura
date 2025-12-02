@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, current_app
 from flask_login import login_required, current_user
-from app.models import db, AnafOAuthConfig, Company
+from app.models import db, AnafOAuthConfig, Company, AnafToken
 from app.services.oauth_service import OAuthService
 from app.services.anaf_service import ANAFService
 from app.utils.decorators import approved_required
@@ -310,4 +310,62 @@ def sync_company(company_id):
         flash('Error starting sync. Please try again.', 'error')
     
     return redirect(url_for('dashboard.index'))
+
+
+@anaf_bp.route('/disconnect', methods=['POST'])
+@login_required
+@approved_required
+def disconnect():
+    """Delete the OAuth token and force re-authentication"""
+    try:
+        # Find and delete the token for current user
+        token = AnafToken.query.filter_by(user_id=current_user.id).first()
+        
+        if token:
+            db.session.delete(token)
+            db.session.commit()
+            current_app.logger.info(f"User {current_user.id} disconnected ANAF account (token deleted)")
+            flash('ANAF account disconnected. You will need to re-authenticate to sync invoices.', 'success')
+        else:
+            flash('No ANAF connection found to disconnect.', 'info')
+        
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error disconnecting ANAF: {str(e)}")
+        flash('Error disconnecting ANAF account. Please try again.', 'error')
+    
+    return redirect(url_for('dashboard.index'))
+
+
+@anaf_bp.route('/status')
+@login_required
+@approved_required
+def status():
+    """Show ANAF connection status and token info"""
+    token = AnafToken.query.filter_by(user_id=current_user.id).first()
+    oauth_config = AnafOAuthConfig.query.first()
+    
+    token_info = None
+    if token:
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc)
+        
+        # Ensure token_expiry is timezone-aware
+        token_expiry = token.token_expiry
+        if token_expiry and token_expiry.tzinfo is None:
+            token_expiry = token_expiry.replace(tzinfo=timezone.utc)
+        
+        is_expired = token_expiry and token_expiry < now if token_expiry else True
+        
+        token_info = {
+            'has_access_token': bool(token.access_token),
+            'has_refresh_token': bool(token.refresh_token),
+            'token_expiry': token_expiry,
+            'is_expired': is_expired,
+            'updated_at': token.updated_at
+        }
+    
+    return render_template('anaf/status.html', 
+                           token_info=token_info, 
+                           oauth_config=oauth_config)
 

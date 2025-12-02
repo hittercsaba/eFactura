@@ -139,6 +139,12 @@
                 </a>
             </li>
             <li>
+                <a href="{{ url_for('anaf.status') }}" class="nav-link {% if request.endpoint.startswith('anaf.status') %}active{% endif %}">
+                    <i class="bi bi-link-45deg"></i>
+                    <span>ANAF Connection</span>
+                </a>
+            </li>
+            <li>
                 <a href="{{ url_for('api_settings.index') }}" class="nav-link {% if request.endpoint.startswith('api_settings') %}active{% endif %}">
                     <i class="bi bi-key"></i>
                     <span>API Settings</span>

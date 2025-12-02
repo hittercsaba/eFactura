@@ -1,6 +1,26 @@
 import requests
+import ssl
+from requests.adapters import HTTPAdapter
+from urllib3.util.ssl_ import create_urllib3_context
 from flask import current_app
 from app.services.oauth_service import OAuthService
+
+class TLSAdapter(HTTPAdapter):
+    """Custom TLS adapter for ANAF api.anaf.ro compatibility"""
+    
+    def init_poolmanager(self, *args, **kwargs):
+        # Create SSL context with standard settings for api.anaf.ro (OAuth2 endpoint)
+        context = create_urllib3_context()
+        
+        # SECLEVEL=1 for compatibility with government servers
+        context.set_ciphers('DEFAULT@SECLEVEL=1')
+        
+        # TLS 1.2+ is standard and secure
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
+        
+        kwargs['ssl_context'] = context
+        return super().init_poolmanager(*args, **kwargs)
+
 
 class ANAFService:
     """Service for interacting with ANAF API"""
@@ -8,12 +28,26 @@ class ANAFService:
     def __init__(self, user_id):
         self.user_id = user_id
         self.oauth_service = OAuthService(user_id)
-        # Use SPV webservices endpoint, not generic API endpoint
-        self.base_url = current_app.config.get('ANAF_API_BASE_URL', 'https://webservicesp.anaf.ro')
+        # Use api.anaf.ro for OAuth2 authentication (Bearer token)
+        # webserviceapl.anaf.ro is for direct certificate authentication (mTLS)
+        # Documentation: https://mfinante.gov.ro/static/10/eFactura/prezentare%20api%20efactura.pdf
+        self.base_url = current_app.config.get('ANAF_API_BASE_URL', 'https://api.anaf.ro')
+        
+        # Create session with custom TLS adapter for ANAF compatibility
+        self.session = requests.Session()
+        self.session.mount('https://', TLSAdapter())
     
     def _get_headers(self):
         """Get headers with authorization token"""
         access_token = self.oauth_service.get_valid_token()
+        
+        # Log token info for debugging
+        current_app.logger.info(f"Using access token for API request (length: {len(access_token) if access_token else 0})")
+        if access_token:
+            current_app.logger.info(f"Token preview: {access_token[:20]}...{access_token[-20:]}")
+        else:
+            current_app.logger.error("No access token available!")
+        
         return {
             'Authorization': f'Bearer {access_token}',
             'Content-Type': 'application/json',
@@ -37,15 +71,19 @@ class ANAFService:
             'cif': cif
         }
         
+        # Get headers (includes token)
+        headers = self._get_headers()
+        
         # Log request details
         current_app.logger.info(f"=== ANAF API REQUEST: Lista Mesaje Factura ===")
         current_app.logger.info(f"URL: {url}")
         current_app.logger.info(f"CIF: {cif}")
         current_app.logger.info(f"Zile: {zile}")
         current_app.logger.info(f"Full URL: {url}?zile={zile}&cif={cif}")
+        current_app.logger.info(f"Authorization Header: Bearer {headers['Authorization'][7:27]}...{headers['Authorization'][-20:]}")
         
         try:
-            response = requests.get(
+            response = self.session.get(
                 url,
                 params=params,
                 headers=self._get_headers(),
@@ -89,7 +127,7 @@ class ANAFService:
         }
         
         try:
-            response = requests.get(
+            response = self.session.get(
                 url,
                 params=params,
                 headers=self._get_headers(),
@@ -120,10 +158,11 @@ class ANAFService:
         
         # For now, return empty list - will be implemented based on actual API
         # The company discovery will happen during OAuth callback or manual entry
+        # Note: Company discovery endpoint doesn't exist in ANAF API - companies must be added manually
         url = f"{self.base_url}/api/user/companies"
         
         try:
-            response = requests.get(
+            response = self.session.get(
                 url,
                 headers=self._get_headers(),
                 timeout=30

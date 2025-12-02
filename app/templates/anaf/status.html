@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+
+{% block title %}ANAF Connection Status{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-12">
+            <h2><i class="bi bi-link-45deg"></i> ANAF Connection Status</h2>
+            <hr>
+        </div>
+    </div>
+    
+    <!-- OAuth Configuration Status -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="bi bi-gear"></i> OAuth Configuration</h5>
+                </div>
+                <div class="card-body">
+                    {% if oauth_config %}
+                        <div class="alert alert-success">
+                            <i class="bi bi-check-circle"></i> OAuth is configured
+                        </div>
+                        <table class="table table-sm">
+                            <tr>
+                                <td><strong>Client ID:</strong></td>
+                                <td><code>{{ oauth_config.client_id[:20] }}...{{ oauth_config.client_id[-10:] }}</code></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Redirect URI:</strong></td>
+                                <td><code>{{ oauth_config.redirect_uri }}</code></td>
+                            </tr>
+                        </table>
+                    {% else %}
+                        <div class="alert alert-warning">
+                            <i class="bi bi-exclamation-triangle"></i> OAuth is not configured
+                        </div>
+                        {% if current_user.is_admin %}
+                            <a href="{{ url_for('anaf.admin_config') }}" class="btn btn-primary">
+                                <i class="bi bi-gear"></i> Configure OAuth
+                            </a>
+                        {% else %}
+                            <p class="text-muted">Please contact your administrator to configure OAuth.</p>
+                        {% endif %}
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        
+        <!-- Token Status -->
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0"><i class="bi bi-key"></i> Token Status</h5>
+                </div>
+                <div class="card-body">
+                    {% if token_info %}
+                        {% if token_info.is_expired %}
+                            <div class="alert alert-warning">
+                                <i class="bi bi-exclamation-triangle"></i> Token is EXPIRED
+                            </div>
+                        {% else %}
+                            <div class="alert alert-success">
+                                <i class="bi bi-check-circle"></i> Token is VALID
+                            </div>
+                        {% endif %}
+                        
+                        <table class="table table-sm">
+                            <tr>
+                                <td><strong>Access Token:</strong></td>
+                                <td>
+                                    {% if token_info.has_access_token %}
+                                        <span class="badge bg-success">Present</span>
+                                    {% else %}
+                                        <span class="badge bg-danger">Missing</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><strong>Refresh Token:</strong></td>
+                                <td>
+                                    {% if token_info.has_refresh_token %}
+                                        <span class="badge bg-success">Present</span>
+                                    {% else %}
+                                        <span class="badge bg-danger">Missing</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><strong>Expires:</strong></td>
+                                <td>
+                                    {% if token_info.token_expiry %}
+                                        {{ token_info.token_expiry.strftime('%Y-%m-%d %H:%M:%S UTC') }}
+                                    {% else %}
+                                        <span class="text-muted">Unknown</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><strong>Last Updated:</strong></td>
+                                <td>
+                                    {% if token_info.updated_at %}
+                                        {{ token_info.updated_at.strftime('%Y-%m-%d %H:%M:%S UTC') }}
+                                    {% else %}
+                                        <span class="text-muted">Unknown</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        </table>
+                        
+                        <div class="d-flex gap-2 mt-3">
+                            <form action="{{ url_for('anaf.disconnect') }}" method="POST" style="display: inline;">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                                <button type="submit" class="btn btn-danger" 
+                                        onclick="return confirm('Are you sure you want to disconnect your ANAF account? You will need to re-authenticate.')">
+                                    <i class="bi bi-unlink"></i> Disconnect & Delete Token
+                                </button>
+                            </form>
+                            
+                            <a href="{{ url_for('anaf.connect') }}" class="btn btn-success">
+                                <i class="bi bi-arrow-repeat"></i> Re-authenticate
+                            </a>
+                        </div>
+                    {% else %}
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle"></i> No ANAF token found
+                        </div>
+                        <p>You haven't connected your ANAF account yet.</p>
+                        
+                        {% if oauth_config %}
+                            <a href="{{ url_for('anaf.connect') }}" class="btn btn-primary">
+                                <i class="bi bi-link-45deg"></i> Connect ANAF Account
+                            </a>
+                        {% endif %}
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Actions -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header bg-secondary text-white">
+                    <h5 class="mb-0"><i class="bi bi-lightning"></i> Quick Actions</h5>
+                </div>
+                <div class="card-body">
+                    <div class="d-flex gap-2 flex-wrap">
+                        <a href="{{ url_for('dashboard.index') }}" class="btn btn-outline-primary">
+                            <i class="bi bi-house"></i> Dashboard
+                        </a>
+                        
+                        {% if oauth_config and token_info %}
+                            <a href="{{ url_for('anaf.connect') }}" class="btn btn-outline-success">
+                                <i class="bi bi-arrow-repeat"></i> Get New Token
+                            </a>
+                        {% endif %}
+                        
+                        {% if current_user.is_admin %}
+                            <a href="{{ url_for('anaf.admin_config') }}" class="btn btn-outline-warning">
+                                <i class="bi bi-gear"></i> OAuth Settings
+                            </a>
+                        {% endif %}
+                        
+                        <a href="{{ url_for('anaf.test_connection') }}" class="btn btn-outline-info">
+                            <i class="bi bi-bug"></i> Connection Test
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
