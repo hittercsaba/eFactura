@@ -35,11 +35,13 @@ class OAuthService:
         # ANAF OAuth2 parameters
         # Per ANAF documentation: e-Factura service doesn't use OpenID Connect scopes
         # Token is associated with the user's digital certificate, not profile/email
+        # Per Postman configuration: token_content_type=jwt must be sent to get JWT tokens
         params = {
             'client_id': self.oauth_config.client_id,
             'redirect_uri': self.oauth_config.redirect_uri,
             'response_type': 'code',
-            'state': state or 'default'
+            'state': state or 'default',
+            'token_content_type': 'jwt'  # Required to get JWT tokens instead of short tokens
         }
         # Note: Scope is omitted as ANAF e-Factura doesn't require it
         
@@ -51,6 +53,7 @@ class OAuthService:
         current_app.logger.info(f"Client ID: {self.oauth_config.client_id}")
         current_app.logger.info(f"Redirect URI: {self.oauth_config.redirect_uri}")
         current_app.logger.info(f"Response Type: code")
+        current_app.logger.info(f"Token Content Type: jwt (required for JWT tokens)")
         current_app.logger.info(f"Scope: (none - not required by ANAF)")
         current_app.logger.info(f"State: {state}")
         current_app.logger.info(f"Full Authorization URL: {auth_url_full}")
@@ -72,11 +75,14 @@ class OAuthService:
         # Basic Auth with client_id and client_secret
         auth = HTTPBasicAuth(self.oauth_config.client_id, self.oauth_config.client_secret)
         
-        # Form data with grant_type, code, and redirect_uri
+        # Form data with grant_type, code, redirect_uri, and token_content_type
+        # Per Postman configuration: token_content_type=jwt must be sent in request body
+        # to get JWT tokens instead of short 64-character tokens
         data = {
             'grant_type': 'authorization_code',
             'code': code,
-            'redirect_uri': self.oauth_config.redirect_uri
+            'redirect_uri': self.oauth_config.redirect_uri,
+            'token_content_type': 'jwt'  # Required to get JWT tokens
         }
         
         # Headers for form-encoded request
@@ -91,10 +97,12 @@ class OAuthService:
         current_app.logger.info(f"Grant Type: authorization_code")
         current_app.logger.info(f"Authorization Code: {code[:20]}...{code[-20:] if len(code) > 40 else ''}")
         current_app.logger.info(f"Redirect URI: {self.oauth_config.redirect_uri}")
+        current_app.logger.info(f"Token Content Type: jwt (required for JWT tokens)")
         current_app.logger.info(f"Client ID: {self.oauth_config.client_id}")
         current_app.logger.info(f"Client Secret: {'*' * 20} (length: {len(self.oauth_config.client_secret)})")
         current_app.logger.info(f"Authentication Method: HTTP Basic Auth")
         current_app.logger.info(f"Content-Type: {headers['Content-Type']}")
+        current_app.logger.info(f"Request Data: grant_type=authorization_code&code=...&redirect_uri=...&token_content_type=jwt")
         current_app.logger.info("=" * 60)
         
         try:
@@ -106,8 +114,57 @@ class OAuthService:
             
             # Check if response is JSON
             try:
+                # Log raw response text FIRST (before JSON parsing) to see full content
+                current_app.logger.info(f"=== RAW RESPONSE FROM ANAF TOKEN ENDPOINT ===")
+                current_app.logger.info(f"Response status: {response.status_code}")
+                current_app.logger.info(f"Content-Length header: {response.headers.get('Content-Length', 'N/A')}")
+                current_app.logger.info(f"Raw response text length: {len(response.text)}")
+                # SECURITY: Do not log full response text if it contains tokens
+                # Only log length and structure for debugging
+                current_app.logger.info(f"Raw response text length: {len(response.text)} chars (content not logged for security)")
+                current_app.logger.info("=" * 60)
+                
+                # Parse JSON response
                 response_data = response.json()
-                current_app.logger.debug(f"Token exchange response data: {response_data}")
+                
+                # Log parsed response structure
+                current_app.logger.info(f"=== PARSED RESPONSE DATA ===")
+                current_app.logger.info(f"Response keys: {list(response_data.keys())}")
+                
+                # Check access_token in detail
+                if 'access_token' in response_data:
+                    access_token_value = response_data['access_token']
+                    current_app.logger.info(f"Access token - Type: {type(access_token_value)}")
+                    current_app.logger.info(f"Access token - Length: {len(str(access_token_value))}")
+                    # SECURITY: Do not log full token value - only log length and structure
+                    # Logging full tokens would be a security risk
+                    current_app.logger.info(f"Access token - Full value length: {len(str(access_token_value))} chars (value not logged for security)")
+                    
+                    # Check if it's a JWT (should have 3 parts separated by dots)
+                    if isinstance(access_token_value, str):
+                        parts = access_token_value.split('.')
+                        current_app.logger.info(f"Token parts count: {len(parts)} (JWT should have exactly 3 parts)")
+                        if len(parts) == 3:
+                            current_app.logger.info(f"✅ JWT structure detected!")
+                            current_app.logger.info(f"   Header length: {len(parts[0])} chars")
+                            current_app.logger.info(f"   Payload length: {len(parts[1])} chars")
+                            current_app.logger.info(f"   Signature length: {len(parts[2])} chars")
+                            current_app.logger.info(f"   Total JWT length: {len(access_token_value)} chars")
+                        else:
+                            current_app.logger.error(f"❌ Token does NOT appear to be a JWT!")
+                            current_app.logger.error(f"   Expected 3 parts (header.payload.signature)")
+                            current_app.logger.error(f"   Got {len(parts)} parts")
+                            current_app.logger.error(f"   This might indicate:")
+                            current_app.logger.error(f"     1. ANAF returned a non-JWT token")
+                            current_app.logger.error(f"     2. Response was truncated")
+                            current_app.logger.error(f"     3. JSON parsing issue")
+                
+                if 'refresh_token' in response_data:
+                    refresh_token_value = response_data['refresh_token']
+                    current_app.logger.info(f"Refresh token - Type: {type(refresh_token_value)}, Length: {len(str(refresh_token_value))}")
+                
+                current_app.logger.info(f"Full response_data: {response_data}")
+                current_app.logger.info("=" * 60)
             except ValueError:
                 current_app.logger.error(f"Token exchange response is not JSON: {response.text[:500]}")
                 raise ValueError(f"Invalid response from token endpoint: {response.text[:500]}")
@@ -127,25 +184,43 @@ class OAuthService:
             expires_in = response_data.get('expires_in', 3600)
             token_expiry = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
             
+            # Get tokens from response
+            access_token = response_data.get('access_token')
+            refresh_token = response_data.get('refresh_token')
+            
+            # Log token lengths for debugging
+            current_app.logger.info(f"Token lengths - Access: {len(access_token) if access_token else 0}, Refresh: {len(refresh_token) if refresh_token else 0}")
+            
+            # Validate token length (JWT tokens should be much longer than 64 chars)
+            if access_token and len(access_token) < 100:
+                current_app.logger.warning(f"WARNING: Access token seems too short ({len(access_token)} chars). Expected 1500+ for JWT tokens.")
+            
             # Save or update token
             anaf_token = AnafToken.query.filter_by(user_id=self.user_id).first()
             
             if anaf_token:
-                anaf_token.access_token = response_data.get('access_token')
-                anaf_token.refresh_token = response_data.get('refresh_token')
+                anaf_token.access_token = access_token
+                anaf_token.refresh_token = refresh_token
                 anaf_token.token_expiry = token_expiry
                 anaf_token.updated_at = datetime.now(timezone.utc)
             else:
                 anaf_token = AnafToken(
                     user_id=self.user_id,
-                    access_token=response_data.get('access_token'),
-                    refresh_token=response_data.get('refresh_token'),
+                    access_token=access_token,
+                    refresh_token=refresh_token,
                     token_expiry=token_expiry
                 )
                 db.session.add(anaf_token)
             
             db.session.commit()
-            current_app.logger.info(f"Successfully exchanged code for token for user {self.user_id}")
+            
+            # Verify token was stored correctly
+            db.session.refresh(anaf_token)
+            stored_length = len(anaf_token.access_token) if anaf_token.access_token else 0
+            current_app.logger.info(f"Successfully exchanged code for token for user {self.user_id}. Stored token length: {stored_length}")
+            
+            if stored_length != len(access_token):
+                current_app.logger.error(f"ERROR: Token length mismatch! Received: {len(access_token)}, Stored: {stored_length}")
             return response_data
             
         except requests.exceptions.RequestException as e:
@@ -178,8 +253,15 @@ class OAuthService:
             'refresh_token': anaf_token.refresh_token
         }
         
+        # Headers for form-encoded request
+        headers = {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Accept': 'application/json'
+        }
+        
         try:
-            response = requests.post(token_url, data=data, auth=auth, timeout=30)
+            # Use session with TLSAdapter for consistent SSL/TLS handling
+            response = self.session.post(token_url, data=data, headers=headers, auth=auth, timeout=30)
             response.raise_for_status()
             token_data = response.json()
             

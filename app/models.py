@@ -59,8 +59,8 @@ class AnafToken(db.Model):
     
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), unique=True, nullable=False)
-    access_token = db.Column(db.String(500), nullable=False)
-    refresh_token = db.Column(db.String(500), nullable=True)
+    access_token = db.Column(db.String(2000), nullable=False)  # Increased for JWT tokens (can be 1500+ chars)
+    refresh_token = db.Column(db.String(2000), nullable=True)  # Increased for JWT tokens
     token_expiry = db.Column(db.DateTime, nullable=True)
     updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
     
@@ -138,8 +138,13 @@ class Invoice(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     company_id = db.Column(db.Integer, db.ForeignKey('companies.id'), nullable=False, index=True)
     anaf_id = db.Column(db.String(100), nullable=False, index=True)
+    invoice_type = db.Column(db.String(20), nullable=True, index=True)  # "FACTURA PRIMITA" or "FACTURA TRIMISA"
     supplier_name = db.Column(db.String(200), nullable=True)
     supplier_cif = db.Column(db.String(20), nullable=True)
+    cif_emitent = db.Column(db.String(20), nullable=True, index=True)  # Issuer CIF
+    cif_beneficiar = db.Column(db.String(20), nullable=True, index=True)  # Receiver CIF
+    issuer_name = db.Column(db.String(200), nullable=True)  # Extracted from XML
+    receiver_name = db.Column(db.String(200), nullable=True)  # Extracted from XML
     invoice_date = db.Column(db.Date, nullable=True)
     total_amount = db.Column(db.Numeric(15, 2), nullable=True)
     xml_content = db.Column(db.Text, nullable=False)

@@ -1,8 +1,11 @@
-from flask import Blueprint, render_template, session, redirect, url_for, request, flash
+from flask import Blueprint, render_template, session, redirect, url_for, request, flash, send_file, Response
 from flask_login import login_required, current_user
 from app.models import Company, Invoice, db
 from app.utils.decorators import approved_required
+from app.services.anaf_service import ANAFService
 from sqlalchemy import desc
+import zipfile
+import io
 
 dashboard_bp = Blueprint('dashboard', __name__)
 
@@ -20,7 +23,8 @@ def index():
             'dashboard.html',
             companies=[],
             selected_company=None,
-            invoices=None
+            invoices=None,
+            active_tab='all'
         )
     
     # Get selected company from session or default to first
@@ -40,18 +44,37 @@ def index():
         session['selected_company_id'] = selected_company.id
     
     # Get invoices for selected company
-    page = request.args.get('page', 1, type=int)
+    # Validate and sanitize input parameters
+    try:
+        page = max(1, int(request.args.get('page', 1)))
+    except (ValueError, TypeError):
+        page = 1
+    
+    invoice_type_filter = request.args.get('type', 'all').strip().lower()
+    # Validate filter value to prevent injection
+    if invoice_type_filter not in ('all', 'received', 'sent'):
+        invoice_type_filter = 'all'
+    
     per_page = 50
     
-    invoices = Invoice.query.filter_by(company_id=selected_company.id)\
-        .order_by(desc(Invoice.synced_at))\
+    # Build query with optional type filter
+    query = Invoice.query.filter_by(company_id=selected_company.id)
+    
+    if invoice_type_filter == 'received':
+        query = query.filter_by(invoice_type='FACTURA PRIMITA')
+    elif invoice_type_filter == 'sent':
+        query = query.filter_by(invoice_type='FACTURA TRIMISA')
+    # else 'all' - no filter
+    
+    invoices = query.order_by(desc(Invoice.synced_at))\
         .paginate(page=page, per_page=per_page, error_out=False)
     
     return render_template(
         'dashboard.html',
         companies=companies,
         selected_company=selected_company,
-        invoices=invoices
+        invoices=invoices,
+        active_tab=invoice_type_filter
     )
 
 @dashboard_bp.route('/switch-company', methods=['POST'])
@@ -81,4 +104,53 @@ def switch_company():
         flash('Invalid company selected.', 'error')
     
     return redirect(url_for('dashboard.index'))
+
+@dashboard_bp.route('/invoice/<int:invoice_id>/download')
+@login_required
+@approved_required
+def download_invoice(invoice_id):
+    """Download invoice as ZIP file"""
+    # Get invoice and verify it belongs to user's company
+    invoice = Invoice.query.get_or_404(invoice_id)
+    
+    # Verify invoice belongs to user's company
+    if invoice.company.user_id != current_user.id:
+        flash('Access denied.', 'error')
+        return redirect(url_for('dashboard.index'))
+    
+    try:
+        # Try to re-download from ANAF API (fresh data)
+        anaf_service = ANAFService(current_user.id)
+        zip_content = anaf_service.descarcare_factura(invoice.anaf_id)
+        
+        # Sanitize filename to prevent path traversal
+        safe_filename = f"invoice_{invoice.anaf_id}.zip".replace('/', '_').replace('\\', '_')
+        
+        # Return ZIP file
+        return Response(
+            zip_content,
+            mimetype='application/zip',
+            headers={
+                'Content-Disposition': f'attachment; filename={safe_filename}',
+                'X-Content-Type-Options': 'nosniff'
+            }
+        )
+    except Exception as e:
+        # Fallback: create ZIP from stored XML
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            zip_file.writestr(f'invoice_{invoice.anaf_id}.xml', invoice.xml_content)
+        
+        zip_buffer.seek(0)
+        
+        # Sanitize filename to prevent path traversal
+        safe_filename = f"invoice_{invoice.anaf_id}.zip".replace('/', '_').replace('\\', '_')
+        return Response(
+            zip_buffer.read(),
+            mimetype='application/zip',
+            headers={
+                'Content-Disposition': f'attachment; filename={safe_filename}',
+                'X-Content-Type-Options': 'nosniff'
+            }
+        )
 

@@ -2,6 +2,9 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from datetime import datetime, timedelta, timezone
 from flask import current_app
+import zipfile
+import io
+import re
 from app.models import db, Company, Invoice, AnafToken
 from app.services.anaf_service import ANAFService
 from app.services.invoice_service import InvoiceService
@@ -42,34 +45,80 @@ def sync_company_invoices(company_id):
             else:
                 current_app.logger.info(f"Invoice list length: {len(invoice_list) if isinstance(invoice_list, list) else 'N/A'}")
             
-            # Process invoice list (structure may vary)
+            # Process invoice list according to ANAF documentation
+            # Response structure: {"mesaje": [...], "serial": "", "cui": "", "titlu": ""}
             invoices_data = []
             if isinstance(invoice_list, dict):
-                invoices_data = invoice_list.get('listaMesajeFactura', []) or \
-                              invoice_list.get('data', []) or \
-                              invoice_list.get('invoices', []) or \
-                              invoice_list.get('mesaje', [])
+                # Per ANAF documentation, messages are in 'mesaje' key
+                invoices_data = invoice_list.get('mesaje', [])
+                
+                # Log metadata
+                serial = invoice_list.get('serial', 'N/A')
+                cui = invoice_list.get('cui', 'N/A')
+                titlu = invoice_list.get('titlu', 'N/A')
+                current_app.logger.info(f"Response metadata - Serial: {serial}, CUI: {cui}, Title: {titlu[:100]}")
             elif isinstance(invoice_list, list):
+                # Fallback: if response is directly a list
                 invoices_data = invoice_list
             
-            current_app.logger.info(f"Extracted {len(invoices_data)} invoices from response")
+            current_app.logger.info(f"Extracted {len(invoices_data)} messages from response")
             current_app.logger.info("=" * 60)
             
             synced_count = 0
             for invoice_item in invoices_data:
                 try:
-                    # Extract invoice ID (structure may vary)
+                    # Extract message data per ANAF documentation structure
+                    # Message structure: {"data_creare": "...", "cif": "", "id_solicitare": "", 
+                    #                     "detalii": "", "tip": "FACTURA PRIMITA | FACTURA TRIMISA", "id": ""}
                     invoice_id = None
+                    invoice_type = None
+                    data_creare = None
+                    detalii = None
+                    cif_emitent = None
+                    cif_beneficiar = None
+                    
+                    invoice_date_from_response = None
+                    
                     if isinstance(invoice_item, dict):
-                        invoice_id = invoice_item.get('id') or \
-                                   invoice_item.get('ID') or \
-                                   invoice_item.get('invoiceId') or \
-                                   invoice_item.get('invoice_id')
+                        # Per documentation, message ID is in 'id' field
+                        invoice_id = invoice_item.get('id') or invoice_item.get('ID')
+                        invoice_type = invoice_item.get('tip', '')
+                        data_creare = invoice_item.get('data_creare', '')
+                        detalii = invoice_item.get('detalii', '')
+                        
+                        # Parse data_creare from format "YYYYMMDDHHmm" to date
+                        if data_creare and len(data_creare) >= 8:
+                            try:
+                                # Format: "202511280924" -> YYYYMMDDHHmm
+                                # Extract date part (first 8 characters: YYYYMMDD)
+                                date_str = data_creare[:8]
+                                invoice_date_from_response = datetime.strptime(date_str, '%Y%m%d').date()
+                                current_app.logger.debug(f"Parsed invoice date from data_creare '{data_creare}': {invoice_date_from_response}")
+                            except ValueError as e:
+                                current_app.logger.warning(f"Could not parse data_creare '{data_creare}': {str(e)}")
+                        
+                        # Extract CIF emitent and CIF beneficiar from detalii field
+                        # Pattern: "Factura cu id_incarcare=5638821927 emisa de cif_emitent=32640679 pentru cif_beneficiar=51331025"
+                        if detalii:
+                            emitent_match = re.search(r'cif_emitent=(\d+)', detalii)
+                            beneficiar_match = re.search(r'cif_beneficiar=(\d+)', detalii)
+                            
+                            if emitent_match:
+                                cif_emitent = emitent_match.group(1)
+                            if beneficiar_match:
+                                cif_beneficiar = beneficiar_match.group(1)
+                            
+                            current_app.logger.info(f"Extracted CIFs from detalii - Emitent: {cif_emitent}, Beneficiar: {cif_beneficiar}")
+                            if not cif_emitent or not cif_beneficiar:
+                                current_app.logger.warning(f"Could not extract CIFs from detalii: {detalii}")
                     elif isinstance(invoice_item, str):
                         invoice_id = invoice_item
                     
                     if not invoice_id:
+                        current_app.logger.warning(f"Skipping invoice item without ID: {invoice_item}")
                         continue
+                    
+                    current_app.logger.info(f"Processing message ID: {invoice_id}, Type: {invoice_type}, Date: {data_creare}, CIF Emitent: {cif_emitent}, CIF Beneficiar: {cif_beneficiar}")
                     
                     # Check if invoice already exists
                     existing = Invoice.query.filter_by(
@@ -78,27 +127,135 @@ def sync_company_invoices(company_id):
                     ).first()
                     
                     if existing:
-                        continue  # Skip already synced invoices
+                        # Update existing invoice with new fields if they're missing
+                        needs_update = False
+                        if not existing.invoice_type and invoice_type:
+                            existing.invoice_type = invoice_type
+                            needs_update = True
+                        if not existing.cif_emitent and cif_emitent:
+                            existing.cif_emitent = cif_emitent
+                            needs_update = True
+                        if not existing.cif_beneficiar and cif_beneficiar:
+                            existing.cif_beneficiar = cif_beneficiar
+                            needs_update = True
+                        
+                        if needs_update:
+                            current_app.logger.info(f"Updating existing invoice {invoice_id} with missing fields")
+                            
+                            # Always download and parse XML to get issuer/receiver names and update date
+                            # This ensures we have the most complete data
+                            try:
+                                file_content = anaf_service.descarcare_factura(invoice_id)
+                                
+                                if file_content.startswith(b'PK\x03\x04'):
+                                    with zipfile.ZipFile(io.BytesIO(file_content)) as zip_file:
+                                        # Find invoice XML file (exclude signature files)
+                                        all_xml_files = [f for f in zip_file.namelist() if f.endswith('.xml')]
+                                        invoice_xml_files = [f for f in all_xml_files if not f.startswith('semnatura_')]
+                                        
+                                        if invoice_xml_files:
+                                            xml_content = zip_file.read(invoice_xml_files[0]).decode('utf-8')
+                                        elif all_xml_files:
+                                            xml_content = zip_file.read(all_xml_files[0]).decode('utf-8')
+                                        else:
+                                            xml_content = None
+                                elif file_content.startswith(b'<?xml') or file_content.startswith(b'<'):
+                                    xml_content = file_content.decode('utf-8')
+                                else:
+                                    xml_content = None
+                                
+                                if xml_content:
+                                    parsed_data = invoice_service.parse_xml_to_json(xml_content)
+                                    supplier_name, supplier_cif, invoice_date_from_xml, total_amount, issuer_name, receiver_name = \
+                                        invoice_service.extract_invoice_fields(parsed_data)
+                                    
+                                    # Update issuer and receiver names if missing
+                                    if not existing.issuer_name and issuer_name:
+                                        existing.issuer_name = issuer_name
+                                        needs_update = True
+                                    if not existing.receiver_name and receiver_name:
+                                        existing.receiver_name = receiver_name
+                                        needs_update = True
+                                    
+                                    # Update invoice date - prefer data_creare from response, fallback to XML
+                                    if invoice_date_from_response:
+                                        if not existing.invoice_date or existing.invoice_date != invoice_date_from_response:
+                                            existing.invoice_date = invoice_date_from_response
+                                            needs_update = True
+                                    elif invoice_date_from_xml and not existing.invoice_date:
+                                        existing.invoice_date = invoice_date_from_xml
+                                        needs_update = True
+                            except Exception as e:
+                                current_app.logger.warning(f"Error updating invoice {invoice_id} with XML data: {str(e)}")
+                            
+                            if needs_update:
+                                db.session.commit()
+                        continue  # Skip re-processing existing invoices
                     
-                    # Download invoice XML
+                    # Download invoice file (binary - ZIP or XML)
                     try:
-                        xml_content = anaf_service.descarcare_factura(invoice_id)
+                        file_content = anaf_service.descarcare_factura(invoice_id)
+                        
+                        # Handle binary content - could be ZIP or XML
+                        # Try to detect if it's ZIP (starts with PK\x03\x04) or XML
+                        if file_content.startswith(b'PK\x03\x04'):
+                            # It's a ZIP file - extract XML from it
+                            try:
+                                with zipfile.ZipFile(io.BytesIO(file_content)) as zip_file:
+                                    # Find invoice XML file in ZIP (exclude signature files)
+                                    # Signature files are named like "semnatura_*.xml"
+                                    # Invoice files are named like "{id_solicitare}.xml"
+                                    all_xml_files = [f for f in zip_file.namelist() if f.endswith('.xml')]
+                                    # Filter out signature files
+                                    invoice_xml_files = [f for f in all_xml_files if not f.startswith('semnatura_')]
+                                    
+                                    if invoice_xml_files:
+                                        # Use the first non-signature XML file (should be the invoice)
+                                        xml_content = zip_file.read(invoice_xml_files[0]).decode('utf-8')
+                                        current_app.logger.debug(f"Extracted invoice XML from {invoice_xml_files[0]} (ZIP contained {len(all_xml_files)} XML files)")
+                                    elif all_xml_files:
+                                        # Fallback: use first XML file if no non-signature files found
+                                        xml_content = zip_file.read(all_xml_files[0]).decode('utf-8')
+                                        current_app.logger.warning(f"Using signature XML file {all_xml_files[0]} as fallback for invoice {invoice_id}")
+                                    else:
+                                        current_app.logger.warning(f"No XML file found in ZIP for invoice {invoice_id}")
+                                        continue
+                            except Exception as e:
+                                current_app.logger.error(f"Error extracting ZIP for invoice {invoice_id}: {str(e)}")
+                                continue
+                        elif file_content.startswith(b'<?xml') or file_content.startswith(b'<'):
+                            # It's XML directly
+                            xml_content = file_content.decode('utf-8')
+                        else:
+                            current_app.logger.warning(f"Unknown file format for invoice {invoice_id}")
+                            continue
+                            
                     except Exception as e:
                         current_app.logger.warning(f"Error downloading invoice {invoice_id}: {str(e)}")
                         continue
                     
-                    # Parse XML to JSON
+                    # Parse XML to JSON to extract issuer and receiver names
                     parsed_data = invoice_service.parse_xml_to_json(xml_content)
-                    supplier_name, supplier_cif, invoice_date, total_amount = \
+                    supplier_name, supplier_cif, invoice_date_from_xml, total_amount, issuer_name, receiver_name = \
                         invoice_service.extract_invoice_fields(parsed_data)
+                    
+                    # Use invoice_date from response (data_creare) if available, otherwise from XML
+                    final_invoice_date = invoice_date_from_response or invoice_date_from_xml
+                    
+                    current_app.logger.info(f"Extracted from XML - Issuer: {issuer_name}, Receiver: {receiver_name}, Date: {final_invoice_date}")
                     
                     # Create invoice record
                     invoice = Invoice(
                         company_id=company.id,
                         anaf_id=str(invoice_id),
+                        invoice_type=invoice_type,  # "FACTURA PRIMITA" or "FACTURA TRIMISA"
                         supplier_name=supplier_name,
                         supplier_cif=supplier_cif,
-                        invoice_date=invoice_date,
+                        cif_emitent=cif_emitent,  # Extracted from detalii
+                        cif_beneficiar=cif_beneficiar,  # Extracted from detalii
+                        issuer_name=issuer_name,  # Extracted from XML
+                        receiver_name=receiver_name,  # Extracted from XML
+                        invoice_date=final_invoice_date,  # From data_creare or XML
                         total_amount=total_amount,
                         xml_content=xml_content,
                         json_content=parsed_data,

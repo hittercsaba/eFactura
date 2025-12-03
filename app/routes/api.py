@@ -2,7 +2,7 @@
 API Routes - RESTful API for invoice access
 Conforms to standard API best practices
 """
-from flask import Blueprint, request, jsonify, current_app
+from flask import Blueprint, request, jsonify, current_app, url_for
 from app.models import db, Invoice, ApiKey, Company
 from werkzeug.security import check_password_hash
 from sqlalchemy import desc, or_
@@ -86,17 +86,43 @@ def validate_pagination_params():
     
     return page, per_page
 
-def format_invoice_response(invoice, include_details=False):
+def format_invoice_response(invoice, include_details=False, api_key=None):
     """Format invoice data for API response"""
     data = {
         'id': invoice.id,
         'anaf_id': invoice.anaf_id,
-        'supplier_name': invoice.supplier_name,
-        'supplier_cif': invoice.supplier_cif,
+        'invoice_type': invoice.invoice_type,
+        'cif_emitent': invoice.cif_emitent,
+        'cif_beneficiar': invoice.cif_beneficiar,
+        'issuer_name': invoice.issuer_name,
+        'receiver_name': invoice.receiver_name,
         'invoice_date': invoice.invoice_date.isoformat() if invoice.invoice_date else None,
         'total_amount': float(invoice.total_amount) if invoice.total_amount else None,
         'synced_at': invoice.synced_at.isoformat() if invoice.synced_at else None
     }
+    
+    # Only include supplier_name and supplier_cif if they are not null
+    # These are legacy fields, issuer_name and receiver_name are preferred
+    if invoice.supplier_name:
+        data['supplier_name'] = invoice.supplier_name
+    if invoice.supplier_cif:
+        data['supplier_cif'] = invoice.supplier_cif
+    
+    # Add download URL for invoice XML/ZIP
+    # Generate URL to our own server's download endpoint
+    # The client will need to use the same X-API-KEY header for authentication
+    try:
+        # Generate absolute URL to our server's download endpoint
+        download_url = url_for('api.download_invoice', invoice_id=invoice.id, _external=True)
+        data['download_url'] = download_url
+    except RuntimeError:
+        # Fallback if no request context: construct URL from request object
+        if request:
+            base_url = request.url_root.rstrip('/')
+            data['download_url'] = f"{base_url}/api/v1/invoices/{invoice.id}/download"
+        else:
+            # Last resort: relative URL (client must construct full URL)
+            data['download_url'] = f"/api/v1/invoices/{invoice.id}/download"
     
     # Include JSON content only if explicitly requested (for detailed view)
     if include_details and invoice.json_content:
@@ -106,12 +132,35 @@ def format_invoice_response(invoice, include_details=False):
 
 @api_bp.route('/health', methods=['GET'])
 def health_check():
-    """Health check endpoint"""
-    return jsonify({
-        'status': 'ok',
+    """
+    Enhanced health check endpoint with dependency checks
+    
+    Returns:
+    - 200: All systems healthy
+    - 503: One or more systems unhealthy
+    """
+    from sqlalchemy import text
+    
+    status = {
+        'status': 'healthy',
         'timestamp': datetime.now(timezone.utc).isoformat(),
-        'version': '1.0.0'
-    }), 200
+        'version': '1.0.0',
+        'checks': {}
+    }
+    
+    # Database connectivity check
+    try:
+        db.session.execute(text('SELECT 1'))
+        status['checks']['database'] = 'healthy'
+    except Exception as e:
+        status['status'] = 'unhealthy'
+        status['checks']['database'] = f'unhealthy: {str(e)}'
+        current_app.logger.error(f"Health check: Database check failed: {str(e)}")
+    
+    # Determine HTTP status code
+    status_code = 200 if status['status'] == 'healthy' else 503
+    
+    return jsonify(status), status_code
 
 @api_bp.route('/invoices', methods=['GET'])
 def get_invoices():
@@ -187,8 +236,8 @@ def get_invoices():
             'code': 'INTERNAL_ERROR'
         }), 500
     
-    # Format response
-    invoices_data = [format_invoice_response(invoice) for invoice in pagination.items]
+    # Format response (request context is available here)
+    invoices_data = [format_invoice_response(invoice, api_key=api_key_obj) for invoice in pagination.items]
     
     return jsonify({
         'data': invoices_data,
@@ -242,7 +291,7 @@ def get_invoice(invoice_id):
     
     # Return invoice with full details
     return jsonify({
-        'data': format_invoice_response(invoice, include_details=True)
+        'data': format_invoice_response(invoice, include_details=True, api_key=api_key_obj)
     }), 200
 
 @api_bp.errorhandler(404)
@@ -272,3 +321,77 @@ def ratelimit_handler(e):
         'message': 'Rate limit exceeded. Please try again later.',
         'code': 'RATE_LIMIT_EXCEEDED'
     }), 429
+
+@api_bp.route('/invoices/<int:invoice_id>/download', methods=['GET'])
+def download_invoice(invoice_id):
+    """
+    Download invoice as ZIP file (contains XML)
+    
+    Path Parameters:
+    - invoice_id (int): Invoice ID
+    
+    Headers:
+    - X-API-KEY (required): API key for authentication
+    
+    Returns:
+    - 200: ZIP file with invoice XML
+    - 401: Unauthorized (missing or invalid API key)
+    - 404: Invoice not found or not accessible
+    """
+    # Authenticate request
+    api_key_obj, error_response = get_api_key_from_request()
+    if error_response:
+        return error_response
+    
+    # Get invoice and verify it belongs to the company
+    invoice = Invoice.query.filter_by(
+        id=invoice_id,
+        company_id=api_key_obj.company_id
+    ).first()
+    
+    if not invoice:
+        return jsonify({
+            'error': 'Not Found',
+            'message': 'Invoice not found or not accessible',
+            'code': 'INVOICE_NOT_FOUND'
+        }), 404
+    
+    try:
+        # Try to re-download from ANAF API (fresh data)
+        from app.services.anaf_service import ANAFService
+        anaf_service = ANAFService(api_key_obj.company.user_id)
+        zip_content = anaf_service.descarcare_factura(invoice.anaf_id)
+        
+        # Return ZIP file
+        # Sanitize filename to prevent path traversal
+        safe_filename = f"invoice_{invoice.anaf_id}.zip".replace('/', '_').replace('\\', '_')
+        from flask import Response
+        return Response(
+            zip_content,
+            mimetype='application/zip',
+            headers={
+                'Content-Disposition': f'attachment; filename={safe_filename}',
+                'X-Content-Type-Options': 'nosniff'
+            }
+        )
+    except Exception as e:
+        # Fallback: create ZIP from stored XML
+        import zipfile
+        import io
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            zip_file.writestr(f'invoice_{invoice.anaf_id}.xml', invoice.xml_content)
+        
+        zip_buffer.seek(0)
+        
+        # Sanitize filename to prevent path traversal
+        safe_filename = f"invoice_{invoice.anaf_id}.zip".replace('/', '_').replace('\\', '_')
+        from flask import Response
+        return Response(
+            zip_buffer.read(),
+            mimetype='application/zip',
+            headers={
+                'Content-Disposition': f'attachment; filename={safe_filename}',
+                'X-Content-Type-Options': 'nosniff'
+            }
+        )

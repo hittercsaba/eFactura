@@ -109,25 +109,108 @@
         <h5 class="mb-0">API Documentation</h5>
     </div>
     <div class="card-body">
-        <h6>Endpoint</h6>
-        <pre class="bg-light p-3 rounded"><code>GET /api/v1/invoices</code></pre>
+        <h6>Base URL</h6>
+        <pre class="bg-light p-3 rounded"><code>{{ request.url_root.rstrip('/') }}/api/v1</code></pre>
         
         <h6 class="mt-3">Authentication</h6>
-        <p>Include your API key in the <code>X-API-KEY</code> header:</p>
+        <p>Include your API key in the <code>X-API-KEY</code> header for all requests:</p>
         <pre class="bg-light p-3 rounded"><code>X-API-KEY: your-api-key-here</code></pre>
+        
+        <hr class="my-4">
+        
+        <h5 class="mt-4">List Invoices</h5>
+        <h6>Endpoint</h6>
+        <pre class="bg-light p-3 rounded"><code>GET /api/v1/invoices</code></pre>
         
         <h6 class="mt-3">Query Parameters</h6>
         <ul>
             <li><code>page</code> - Page number (default: 1)</li>
             <li><code>per_page</code> - Items per page (default: 50, max: 100)</li>
+            <li><code>supplier_cif</code> - Filter by supplier CIF (optional)</li>
+            <li><code>date_from</code> - Filter from date, format: YYYY-MM-DD (optional)</li>
+            <li><code>date_to</code> - Filter to date, format: YYYY-MM-DD (optional)</li>
         </ul>
         
         <h6 class="mt-3">Example Request</h6>
         <pre class="bg-light p-3 rounded"><code>curl -H "X-API-KEY: your-api-key-here" \
-  https://your-domain.com/api/v1/invoices?page=1&per_page=50</code></pre>
+  "{{ request.url_root.rstrip('/') }}/api/v1/invoices?page=1&per_page=50"</code></pre>
+        
+        <h6 class="mt-3">Response Fields</h6>
+        <p>Each invoice in the response includes:</p>
+        <ul>
+            <li><code>id</code> - Internal invoice ID</li>
+            <li><code>anaf_id</code> - ANAF message identifier</li>
+            <li><code>invoice_type</code> - "FACTURA PRIMITA" (received) or "FACTURA TRIMISA" (sent)</li>
+            <li><code>cif_emitent</code> - Issuer CIF</li>
+            <li><code>cif_beneficiar</code> - Receiver CIF</li>
+            <li><code>issuer_name</code> - Issuer company name</li>
+            <li><code>receiver_name</code> - Receiver company name</li>
+            <li><code>invoice_date</code> - Invoice date (YYYY-MM-DD)</li>
+            <li><code>total_amount</code> - Total invoice amount</li>
+            <li><code>synced_at</code> - Sync timestamp</li>
+            <li><code>download_url</code> - URL to download invoice ZIP file</li>
+        </ul>
+        
+        <hr class="my-4">
+        
+        <h5 class="mt-4">Get Invoice by ID</h5>
+        <h6>Endpoint</h6>
+        <pre class="bg-light p-3 rounded"><code>GET /api/v1/invoices/{invoice_id}</code></pre>
+        
+        <h6 class="mt-3">Example Request</h6>
+        <pre class="bg-light p-3 rounded"><code>curl -H "X-API-KEY: your-api-key-here" \
+  "{{ request.url_root.rstrip('/') }}/api/v1/invoices/1"</code></pre>
+        
+        <p class="mt-3">Returns full invoice details including parsed JSON content.</p>
+        
+        <hr class="my-4">
+        
+        <h5 class="mt-4">Download Invoice ZIP</h5>
+        <h6>Endpoint</h6>
+        <pre class="bg-light p-3 rounded"><code>GET /api/v1/invoices/{invoice_id}/download</code></pre>
+        
+        <h6 class="mt-3">Description</h6>
+        <p>Downloads the invoice as a ZIP file containing the XML invoice file(s). The ZIP typically contains:</p>
+        <ul>
+            <li>The invoice XML file (UBL format)</li>
+            <li>A signature XML file (if available)</li>
+        </ul>
+        
+        <h6 class="mt-3">Example Request</h6>
+        <pre class="bg-light p-3 rounded"><code>curl -H "X-API-KEY: your-api-key-here" \
+  "{{ request.url_root.rstrip('/') }}/api/v1/invoices/1/download" \
+  -o invoice.zip</code></pre>
         
         <h6 class="mt-3">Response</h6>
-        <p>The API returns invoices scoped to the company associated with the API key.</p>
+        <ul>
+            <li><strong>Content-Type:</strong> <code>application/zip</code></li>
+            <li><strong>Content-Disposition:</strong> <code>attachment; filename=invoice_{anaf_id}.zip</code></li>
+            <li><strong>Body:</strong> Binary ZIP file content</li>
+        </ul>
+        
+        <div class="alert alert-info mt-3">
+            <strong>Note:</strong> The download URL is automatically included in each invoice object in the API response. Use the same <code>X-API-KEY</code> header when accessing the download URL.
+        </div>
+        
+        <hr class="my-4">
+        
+        <h5 class="mt-4">Error Responses</h5>
+        <p>All errors follow a consistent format:</p>
+        <pre class="bg-light p-3 rounded"><code>{
+  "error": "Error Type",
+  "message": "Human-readable error message",
+  "code": "ERROR_CODE"
+}</code></pre>
+        
+        <h6 class="mt-3">HTTP Status Codes</h6>
+        <ul>
+            <li><code>200</code> - Success</li>
+            <li><code>400</code> - Bad Request (invalid parameters)</li>
+            <li><code>401</code> - Unauthorized (missing or invalid API key)</li>
+            <li><code>404</code> - Not Found (resource doesn't exist or not accessible)</li>
+            <li><code>429</code> - Too Many Requests (rate limit exceeded)</li>
+            <li><code>500</code> - Internal Server Error</li>
+        </ul>
     </div>
 </div>
 {% endblock %}

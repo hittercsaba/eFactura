@@ -110,11 +110,17 @@ curl -X GET "http://localhost:8008/api/v1/invoices?page=1&per_page=50&date_from=
     {
       "id": 1,
       "anaf_id": "1234567890",
+      "invoice_type": "FACTURA PRIMITA",
       "supplier_name": "Supplier Name SRL",
       "supplier_cif": "12345678",
+      "cif_emitent": "12345678",
+      "cif_beneficiar": "51331025",
+      "issuer_name": "Supplier Name SRL",
+      "receiver_name": "Your Company SRL",
       "invoice_date": "2025-01-15",
       "total_amount": 1000.50,
-      "synced_at": "2025-01-16T10:30:00"
+      "synced_at": "2025-01-16T10:30:00",
+      "download_url": "https://web.anaf-efactura.orb.local/api/v1/invoices/1/download"
     }
   ],
   "pagination": {
@@ -131,6 +137,21 @@ curl -X GET "http://localhost:8008/api/v1/invoices?page=1&per_page=50&date_from=
   }
 }
 ```
+
+**Response Fields:**
+- `id` (int): Internal invoice ID
+- `anaf_id` (string): ANAF message identifier
+- `invoice_type` (string): "FACTURA PRIMITA" (received) or "FACTURA TRIMISA" (sent)
+- `supplier_name` (string, nullable): Supplier/issuer company name
+- `supplier_cif` (string, nullable): Supplier CIF
+- `cif_emitent` (string, nullable): Issuer CIF (extracted from ANAF response)
+- `cif_beneficiar` (string, nullable): Receiver CIF (extracted from ANAF response)
+- `issuer_name` (string, nullable): Issuer company name (extracted from XML)
+- `receiver_name` (string, nullable): Receiver company name (extracted from XML)
+- `invoice_date` (string, nullable): Invoice date in ISO format (YYYY-MM-DD)
+- `total_amount` (float, nullable): Total invoice amount
+- `synced_at` (string): Timestamp when invoice was synced (ISO format)
+- `download_url` (string): URL to download invoice ZIP file (requires same API key)
 
 #### Get Invoice by ID
 
@@ -153,17 +174,67 @@ curl -X GET "http://localhost:8008/api/v1/invoices/1" \
   "data": {
     "id": 1,
     "anaf_id": "1234567890",
+    "invoice_type": "FACTURA PRIMITA",
     "supplier_name": "Supplier Name SRL",
     "supplier_cif": "12345678",
+    "cif_emitent": "12345678",
+    "cif_beneficiar": "51331025",
+    "issuer_name": "Supplier Name SRL",
+    "receiver_name": "Your Company SRL",
     "invoice_date": "2025-01-15",
     "total_amount": 1000.50,
     "synced_at": "2025-01-16T10:30:00",
+    "download_url": "https://web.anaf-efactura.orb.local/api/v1/invoices/1/download",
     "details": {
-      // Full invoice JSON content
+      // Full invoice JSON content (parsed from XML)
     }
   }
 }
 ```
+
+#### Download Invoice ZIP
+
+```http
+GET /api/v1/invoices/{invoice_id}/download
+```
+
+**Path Parameters:**
+- `invoice_id` (int, required): Invoice ID
+
+**Description:**
+Downloads the invoice as a ZIP file containing the XML invoice file(s). The ZIP file typically contains:
+- The invoice XML file (UBL format)
+- A signature XML file (if available)
+
+**Example Request:**
+```bash
+curl -X GET "http://localhost:8008/api/v1/invoices/1/download" \
+  -H "X-API-KEY: your-api-key-here" \
+  -o invoice.zip
+```
+
+**Response:**
+- **Content-Type:** `application/zip`
+- **Content-Disposition:** `attachment; filename=invoice_{anaf_id}.zip`
+- **Body:** Binary ZIP file content
+
+**Behavior:**
+1. First attempts to re-download the invoice from ANAF API (fresh data)
+2. Falls back to creating a ZIP from stored XML if ANAF download fails or is rate-limited
+3. Requires the same `X-API-KEY` header for authentication
+4. Only accessible for invoices belonging to the company associated with the API key
+
+**Example Response Headers:**
+```
+HTTP/1.1 200 OK
+Content-Type: application/zip
+Content-Disposition: attachment; filename=invoice_1234567890.zip
+Content-Length: 4197
+```
+
+**Error Responses:**
+- `401 Unauthorized`: Missing or invalid API key
+- `404 Not Found`: Invoice not found or not accessible to the company
 
 ### Error Responses
 
@@ -228,6 +299,7 @@ Rate Limit Exceeded:
 
 API endpoints are rate-limited:
 - `/api/v1/invoices`: 100 requests per hour per IP
+- `/api/v1/invoices/{id}/download`: 100 requests per hour per IP
 - Other endpoints: 200 requests per day, 50 per hour per IP
 
 Rate limit headers are included in responses:

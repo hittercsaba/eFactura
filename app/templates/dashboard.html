@@ -56,25 +56,62 @@
             <h5 class="mb-0">Invoices - {{ selected_company.name }}</h5>
         </div>
         <div class="card-body">
+            <!-- Invoice Type Tabs - Always show if company is selected -->
+            <ul class="nav nav-tabs mb-3" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <a class="nav-link {% if active_tab == 'all' %}active{% endif %}" 
+                       href="{{ url_for('dashboard.index', type='all') }}">
+                        All Invoices
+                    </a>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <a class="nav-link {% if active_tab == 'received' %}active{% endif %}" 
+                       href="{{ url_for('dashboard.index', type='received') }}">
+                        Received (FACTURA PRIMITA)
+                    </a>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <a class="nav-link {% if active_tab == 'sent' %}active{% endif %}" 
+                       href="{{ url_for('dashboard.index', type='sent') }}">
+                        Sent (FACTURA TRIMISA)
+                    </a>
+                </li>
+            </ul>
+            
             {% if invoices.items %}
                 <div class="table-responsive">
                     <table class="table table-hover">
                         <thead>
                             <tr>
+                                <th>Type</th>
                                 <th>ANAF ID</th>
-                                <th>Supplier</th>
-                                <th>Supplier CIF</th>
+                                <th>Issuer CIF</th>
+                                <th>Issuer Name</th>
+                                <th>Receiver CIF</th>
+                                <th>Receiver Name</th>
                                 <th>Date</th>
                                 <th>Total Amount</th>
                                 <th>Synced At</th>
+                                <th>Download</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for invoice in invoices.items %}
                             <tr>
+                                <td>
+                                    {% if invoice.invoice_type == 'FACTURA PRIMITA' %}
+                                        <span class="badge bg-success">Received</span>
+                                    {% elif invoice.invoice_type == 'FACTURA TRIMISA' %}
+                                        <span class="badge bg-primary">Sent</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">{{ invoice.invoice_type or '-' }}</span>
+                                    {% endif %}
+                                </td>
                                 <td><code>{{ invoice.anaf_id }}</code></td>
-                                <td>{{ invoice.supplier_name or '-' }}</td>
-                                <td>{{ invoice.supplier_cif or '-' }}</td>
+                                <td>{{ invoice.cif_emitent or '-' }}</td>
+                                <td>{{ invoice.issuer_name or invoice.supplier_name or '-' }}</td>
+                                <td>{{ invoice.cif_beneficiar or '-' }}</td>
+                                <td>{{ invoice.receiver_name or '-' }}</td>
                                 <td>{{ invoice.invoice_date.strftime('%Y-%m-%d') if invoice.invoice_date else '-' }}</td>
                                 <td>
                                     {% if invoice.total_amount %}
@@ -84,6 +121,13 @@
                                     {% endif %}
                                 </td>
                                 <td>{{ invoice.synced_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                                <td>
+                                    <a href="{{ url_for('dashboard.download_invoice', invoice_id=invoice.id) }}" 
+                                       class="btn btn-sm btn-outline-primary" 
+                                       title="Download Invoice ZIP">
+                                        <i class="bi bi-download"></i> Download
+                                    </a>
+                                </td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -96,7 +140,7 @@
                     <ul class="pagination justify-content-center">
                         {% if invoices.has_prev %}
                             <li class="page-item">
-                                <a class="page-link" href="?page={{ invoices.prev_num }}">Previous</a>
+                                <a class="page-link" href="?page={{ invoices.prev_num }}&type={{ active_tab }}">Previous</a>
                             </li>
                         {% else %}
                             <li class="page-item disabled">
@@ -112,7 +156,7 @@
                                     </li>
                                 {% else %}
                                     <li class="page-item">
-                                        <a class="page-link" href="?page={{ page_num }}">{{ page_num }}</a>
+                                        <a class="page-link" href="?page={{ page_num }}&type={{ active_tab }}">{{ page_num }}</a>
                                     </li>
                                 {% endif %}
                             {% else %}
@@ -124,7 +168,7 @@
                         
                         {% if invoices.has_next %}
                             <li class="page-item">
-                                <a class="page-link" href="?page={{ invoices.next_num }}">Next</a>
+                                <a class="page-link" href="?page={{ invoices.next_num }}&type={{ active_tab }}">Next</a>
                             </li>
                         {% else %}
                             <li class="page-item disabled">

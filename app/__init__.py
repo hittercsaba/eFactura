@@ -11,10 +11,12 @@ from app.models import db
 login_manager = LoginManager()
 migrate = Migrate()
 csrf = CSRFProtect()
+import os
 limiter = Limiter(
     key_func=get_remote_address,
     default_limits=["200 per day", "50 per hour"],
-    storage_uri="memory://"
+    # Use Redis in production if available, fallback to memory
+    storage_uri=os.environ.get('REDIS_URL', 'memory://')
 )
 
 def create_app(config_name='default'):

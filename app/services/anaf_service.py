@@ -56,15 +56,27 @@ class ANAFService:
     
     def lista_mesaje_factura(self, cif, zile=60):
         """
-        List invoices for a specific CIF
+        List e-Factura message notifications for a specific CIF
+        
+        Per ANAF documentation:
+        - Endpoint: GET https://api.anaf.ro/prod/FCTEL/rest/listaMesajeFactura
+        - Response: {"mesaje": [...], "serial": "", "cui": "", "titlu": ""}
         
         Args:
-            cif: Company CIF (Tax ID)
-            zile: Number of days to look back (default 60)
+            cif: Company CIF/CUI (string, digits only)
+            zile: Number of days to look back (integer, 1-90, default 60)
         
         Returns:
-            List of invoice messages
+            Dictionary with structure: {"mesaje": [...], "serial": "", "cui": "", "titlu": ""}
         """
+        # Validate zile parameter (1-90 per ANAF limits)
+        if not isinstance(zile, int) or zile < 1 or zile > 90:
+            raise ValueError(f"zile must be an integer between 1 and 90, got {zile}")
+        
+        # Validate cif parameter (should be string with digits only)
+        if not isinstance(cif, str) or not cif.isdigit():
+            raise ValueError(f"cif must be a string containing only digits, got {cif}")
+        
         url = f"{self.base_url}/prod/FCTEL/rest/listaMesajeFactura"
         params = {
             'zile': zile,
@@ -96,11 +108,27 @@ class ANAFService:
             
             response.raise_for_status()
             
-            # Parse and log response
+            # Parse and validate response structure
             response_data = response.json()
-            current_app.logger.info(f"Response Data Type: {type(response_data)}")
-            current_app.logger.info(f"Response Keys: {response_data.keys() if isinstance(response_data, dict) else 'N/A (list)'}")
-            current_app.logger.info(f"Response Data (first 500 chars): {str(response_data)[:500]}")
+            
+            # Validate response structure per ANAF documentation
+            if not isinstance(response_data, dict):
+                current_app.logger.error(f"Unexpected response type: {type(response_data)}")
+                raise ValueError("Response is not a dictionary")
+            
+            # Expected keys: mesaje, serial, cui, titlu
+            expected_keys = ['mesaje', 'serial', 'cui', 'titlu']
+            missing_keys = [key for key in expected_keys if key not in response_data]
+            if missing_keys:
+                current_app.logger.warning(f"Response missing expected keys: {missing_keys}")
+            
+            # Log response details
+            mesaje_count = len(response_data.get('mesaje', []))
+            current_app.logger.info(f"Response Structure: {list(response_data.keys())}")
+            current_app.logger.info(f"Messages Count: {mesaje_count}")
+            current_app.logger.info(f"Serial: {response_data.get('serial', 'N/A')}")
+            current_app.logger.info(f"CUI: {response_data.get('cui', 'N/A')}")
+            current_app.logger.info(f"Title: {response_data.get('titlu', 'N/A')[:100] if response_data.get('titlu') else 'N/A'}")
             current_app.logger.info("=" * 60)
             
             return response_data
@@ -111,32 +139,65 @@ class ANAFService:
                 current_app.logger.error(f"Error Response Body: {e.response.text[:500]}")
             raise
     
-    def descarcare_factura(self, invoice_id):
+    def descarcare_factura(self, message_id):
         """
-        Download invoice XML by ID
+        Download e-Factura file (ZIP or XML) by ANAF message ID
+        
+        Per ANAF documentation:
+        - Endpoint: GET https://api.anaf.ro/prod/FCTEL/rest/descarcare
+        - Parameter: id (required, string/integer) - ANAF message identifier
+        - Response: Binary content (ZIP or XML)
         
         Args:
-            invoice_id: ANAF invoice ID
+            message_id: ANAF message identifier (from listaMesajeFactura response)
         
         Returns:
-            XML content as string
+            Binary content (bytes) - typically ZIP archive containing invoice XML
         """
+        if not message_id:
+            raise ValueError("message_id is required")
+        
         url = f"{self.base_url}/prod/FCTEL/rest/descarcare"
         params = {
-            'id': invoice_id
+            'id': str(message_id)  # Ensure it's a string
         }
+        
+        # Get headers but override Accept for binary content
+        headers = self._get_headers()
+        headers['Accept'] = 'application/octet-stream'
+        
+        current_app.logger.info(f"=== ANAF API REQUEST: Descarcare Factura ===")
+        current_app.logger.info(f"URL: {url}")
+        current_app.logger.info(f"Message ID: {message_id}")
+        current_app.logger.info(f"Full URL: {url}?id={message_id}")
         
         try:
             response = self.session.get(
                 url,
                 params=params,
-                headers=self._get_headers(),
-                timeout=30
+                headers=headers,
+                timeout=60  # Longer timeout for file downloads
             )
+            
+            current_app.logger.info(f"Response Status: {response.status_code}")
+            current_app.logger.info(f"Content-Type: {response.headers.get('Content-Type', 'N/A')}")
+            current_app.logger.info(f"Content-Length: {response.headers.get('Content-Length', 'N/A')} bytes")
+            
             response.raise_for_status()
-            return response.text
+            
+            # Return binary content (not text)
+            return response.content
+            
         except requests.exceptions.RequestException as e:
-            current_app.logger.error(f"Error downloading invoice {invoice_id}: {str(e)}")
+            current_app.logger.error(f"Error downloading invoice {message_id}: {str(e)}")
+            if hasattr(e, 'response') and e.response is not None:
+                current_app.logger.error(f"Error Response Status: {e.response.status_code}")
+                # Try to parse error message if JSON
+                try:
+                    error_data = e.response.json()
+                    current_app.logger.error(f"Error Response Body: {error_data}")
+                except:
+                    current_app.logger.error(f"Error Response Text: {e.response.text[:500]}")
             raise
     
     def get_user_companies(self):

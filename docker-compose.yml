@@ -7,7 +7,7 @@ services:
       - db
     environment:
       - DATABASE_URL=postgresql://efactura_user:efactura_pass@db:5432/efactura_db
-      - SECRET_KEY=${SECRET_KEY:-dev-secret-key-change-in-production}
+      - SECRET_KEY=${SECRET_KEY:-a6466c654a2eb9691c35de104208d66e2fe740728b73bae48d769355106e3092}
       - ANAF_API_BASE_URL=https://api.anaf.ro
       - FLASK_ENV=${FLASK_ENV:-production}
     volumes:
