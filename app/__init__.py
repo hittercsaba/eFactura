@@ -124,9 +124,11 @@ def create_app(config_name='default'):
     app.register_blueprint(users_bp)
     
     # Apply rate limiting to specific routes after blueprint registration
-    from app.routes.api import get_invoices
+    from app.routes.api import get_invoices, get_invoice, health_check
     from app.routes.auth import register, login
     limiter.limit("100 per hour")(get_invoices)
+    limiter.limit("100 per hour")(get_invoice)
+    limiter.limit("200 per hour")(health_check)  # Health check can be called more frequently
     limiter.limit("5 per hour")(register)
     limiter.limit("10 per hour")(login)
     

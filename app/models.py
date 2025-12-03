@@ -144,7 +144,7 @@ class Invoice(db.Model):
     total_amount = db.Column(db.Numeric(15, 2), nullable=True)
     xml_content = db.Column(db.Text, nullable=False)
     json_content = db.Column(db.JSON, nullable=True)
-    synced_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    synced_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     
     # Unique constraint: same ANAF ID can't be synced twice for same company
     __table_args__ = (db.UniqueConstraint('company_id', 'anaf_id', name='unique_company_anaf_id'),)
