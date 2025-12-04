@@ -53,6 +53,16 @@ def create_app(config_name='default'):
         from flask_wtf.csrf import generate_csrf
         return dict(csrf_token=generate_csrf)
     
+    # Make impersonation helpers available in all templates
+    @app.context_processor
+    def inject_impersonation():
+        from app.utils.impersonation import is_impersonating, get_original_admin, get_impersonated_user
+        return dict(
+            is_impersonating=is_impersonating,
+            get_original_admin=get_original_admin,
+            get_impersonated_user=get_impersonated_user
+        )
+    
     # Helper function to get correct base URL (handles proxy)
     @app.context_processor
     def inject_base_url():
@@ -103,6 +113,9 @@ def create_app(config_name='default'):
     @login_manager.user_loader
     def load_user(user_id):
         try:
+            # Normal user loading - Flask-Login will handle the session
+            # When impersonating, login_user(impersonated_user) updates Flask-Login's session
+            # so user_id will be the impersonated user's ID
             return User.query.get(int(user_id))
         except Exception:
             # Handle case where database migration hasn't been run yet

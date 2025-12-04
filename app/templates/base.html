@@ -120,6 +120,30 @@
     {% block extra_css %}{% endblock %}
 </head>
 <body>
+    <!-- Impersonation Banner -->
+    {% if is_impersonating() %}
+    <div class="alert alert-warning alert-dismissible fade show mb-0" role="alert" style="border-radius: 0; z-index: 1050; position: relative;">
+        <div class="container-fluid">
+            <div class="d-flex align-items-center justify-content-between">
+                <div>
+                    <i class="bi bi-person-badge"></i>
+                    <strong>Impersonating:</strong> You are viewing as <strong>{{ current_user.email }}</strong>
+                    {% set original_admin = get_original_admin() %}
+                    {% if original_admin %}
+                        (Logged in as admin: {{ original_admin.email }})
+                    {% endif %}
+                </div>
+                <form method="POST" action="{{ url_for('users.stop_impersonate') }}" class="d-inline">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                    <button type="submit" class="btn btn-sm btn-outline-danger">
+                        <i class="bi bi-x-circle"></i> Stop Impersonating
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    
     <!-- Sidebar -->
     <nav class="sidebar">
         <div class="sidebar-brand">

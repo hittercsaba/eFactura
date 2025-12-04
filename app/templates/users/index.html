@@ -75,7 +75,17 @@
                                         </button>
                                     </form>
                                 {% else %}
-                                    {% if user.id != current_user.id %}
+                                    {% set can_impersonate = original_admin and original_admin.id != user.id %}
+                                    {% if can_impersonate %}
+                                        <form method="POST" action="{{ url_for('users.impersonate_user', user_id=user.id) }}" class="d-inline">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                                            <button type="submit" class="btn btn-primary btn-sm" 
+                                                    title="Login as this user">
+                                                <i class="bi bi-person-check"></i> Login as
+                                            </button>
+                                        </form>
+                                    {% endif %}
+                                    {% if user.id != original_admin.id %}
                                         <form method="POST" action="{{ url_for('users.toggle_admin', user_id=user.id) }}" class="d-inline">
                                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
                                             <button type="submit" class="btn btn-warning btn-sm" 
