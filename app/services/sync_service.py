@@ -177,11 +177,18 @@ def _sync_company_invoices_impl(company_id, force=False):
         # Log raw response for debugging
         current_app.logger.info(f"=== PROCESSING INVOICE LIST FOR COMPANY {company_id} ===")
         current_app.logger.info(f"Invoice list type: {type(invoice_list)}")
+        print(f"[SYNC_IMPL] Step 14: Invoice list type: {type(invoice_list)}", file=sys.stderr)
+        sys.stderr.flush()
+        
         if isinstance(invoice_list, dict):
             current_app.logger.info(f"Invoice list keys: {invoice_list.keys()}")
             current_app.logger.info(f"Invoice list (first 300 chars): {str(invoice_list)[:300]}")
+            print(f"[SYNC_IMPL] Invoice list keys: {list(invoice_list.keys())}", file=sys.stderr)
+            sys.stderr.flush()
         else:
             current_app.logger.info(f"Invoice list length: {len(invoice_list) if isinstance(invoice_list, list) else 'N/A'}")
+            print(f"[SYNC_IMPL] Invoice list length: {len(invoice_list) if isinstance(invoice_list, list) else 'N/A'}", file=sys.stderr)
+            sys.stderr.flush()
         
         # Process invoice list according to ANAF documentation
         # Response structure: {"mesaje": [...], "serial": "", "cui": "", "titlu": ""}
@@ -199,11 +206,19 @@ def _sync_company_invoices_impl(company_id, force=False):
             # Fallback: if response is directly a list
             invoices_data = invoice_list
         
+        print(f"[SYNC_IMPL] Step 15: Extracted {len(invoices_data)} messages from response", file=sys.stderr)
+        sys.stderr.flush()
+        
         current_app.logger.info(f"Extracted {len(invoices_data)} messages from response")
         current_app.logger.info("=" * 60)
         
+        print(f"[SYNC_IMPL] Step 16: About to process {len(invoices_data)} invoices", file=sys.stderr)
+        sys.stderr.flush()
+        
         synced_count = 0
         for invoice_item in invoices_data:
+            print(f"[SYNC_IMPL] Processing invoice item: {invoice_item}", file=sys.stderr)
+            sys.stderr.flush()
             try:
                 # Extract message data per ANAF documentation structure
                 # Message structure: {"data_creare": "...", "cif": "", "id_solicitare": "", 
