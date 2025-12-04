@@ -70,13 +70,13 @@ class InvoiceService:
                 
                 # Fallback: try PartyName (older UBL versions)
                 if not invoice_data['issuer_name']:
-                if not invoice_data['issuer_name']:
                     party_name = supplier_party.get('cac:PartyName', {}).get('cbc:Name') or \
                                supplier_party.get('PartyName', {}).get('Name') or \
                                supplier_party.get('partyName', {}).get('name')
                     if party_name:
                         invoice_data['supplier_name'] = party_name
                         invoice_data['issuer_name'] = party_name
+                
                 # Extract CIF from PartyTaxScheme
                 tax_scheme = None
                 if 'cac:PartyTaxScheme' in supplier_party:
