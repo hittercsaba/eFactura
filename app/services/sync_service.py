@@ -131,6 +131,9 @@ def _sync_company_invoices_impl(company_id, force=False):
         sys.stderr.flush()
         
         # Check if user has valid token
+        print(f"[SYNC_IMPL] Step 8: Querying token for company.user_id={company.user_id}", file=sys.stderr)
+        sys.stderr.flush()
+        
         anaf_token = AnafToken.query.filter_by(user_id=company.user_id).first()
         print(f"[SYNC_IMPL] Step 8: Token query returned: {anaf_token}", file=sys.stderr)
         sys.stderr.flush()
@@ -141,12 +144,37 @@ def _sync_company_invoices_impl(company_id, force=False):
             current_app.logger.error(f"No ANAF token found for company {company_id} (user_id: {company.user_id})")
             return
         
+        # CRITICAL VERIFICATION: Ensure token belongs to the company's user
+        if anaf_token.user_id != company.user_id:
+            print(f"[SYNC_IMPL] ERROR: Token user_id mismatch! Token.user_id={anaf_token.user_id}, Company.user_id={company.user_id}", file=sys.stderr)
+            sys.stderr.flush()
+            current_app.logger.error(f"Token user_id mismatch for company {company_id}: token.user_id={anaf_token.user_id}, company.user_id={company.user_id}")
+            return
+        
+        print(f"[SYNC_IMPL] Token verification passed: token.user_id={anaf_token.user_id} matches company.user_id={company.user_id}", file=sys.stderr)
+        sys.stderr.flush()
+        
         print(f"[SYNC_IMPL] Step 9: ANAF token found, initializing services", file=sys.stderr)
         sys.stderr.flush()
         
         current_app.logger.info(f"ANAF token found for user {company.user_id}")
         
-        # Initialize services
+        # CRITICAL: Verify we're using the correct user_id for the company
+        print(f"[SYNC_IMPL] CRITICAL CHECK: Company ID={company.id}, Company CIF={company.cif}, Company user_id={company.user_id}", file=sys.stderr)
+        sys.stderr.flush()
+        
+        # Verify token belongs to company's user
+        token_check = AnafToken.query.filter_by(user_id=company.user_id).first()
+        if token_check:
+            print(f"[SYNC_IMPL] Token verification: Found token for user_id={company.user_id}, token.user_id={token_check.user_id}", file=sys.stderr)
+            sys.stderr.flush()
+        else:
+            print(f"[SYNC_IMPL] ERROR: No token found for company.user_id={company.user_id}", file=sys.stderr)
+            sys.stderr.flush()
+        
+        # Initialize services with company's user_id
+        print(f"[SYNC_IMPL] Initializing ANAFService with user_id={company.user_id}", file=sys.stderr)
+        sys.stderr.flush()
         anaf_service = ANAFService(company.user_id)
         invoice_service = InvoiceService()
         

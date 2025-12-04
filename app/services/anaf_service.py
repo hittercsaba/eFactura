@@ -40,10 +40,17 @@ class ANAFService:
     
     def _get_headers(self):
         """Get headers with authorization token"""
+        import sys
+        print(f"[ANAF_SERVICE] _get_headers called for user_id={self.user_id}", file=sys.stderr)
+        sys.stderr.flush()
+        
         access_token = self.oauth_service.get_valid_token()
         
         # Log token info for debugging
-        current_app.logger.info(f"Using access token for API request (length: {len(access_token) if access_token else 0})")
+        print(f"[ANAF_SERVICE] Got access token (length: {len(access_token) if access_token else 0}) for user_id={self.user_id}", file=sys.stderr)
+        sys.stderr.flush()
+        
+        current_app.logger.info(f"Using access token for API request (user_id={self.user_id}, length: {len(access_token) if access_token else 0})")
         if access_token:
             current_app.logger.info(f"Token preview: {access_token[:20]}...{access_token[-20:]}")
         else:
@@ -88,8 +95,13 @@ class ANAFService:
         # Get headers (includes token)
         headers = self._get_headers()
         
-        # Log request details
+        # Log request details with user_id for verification
+        import sys
+        print(f"[ANAF_API] REQUEST: lista_mesaje_factura - user_id={self.user_id}, cif={cif}, zile={zile}", file=sys.stderr)
+        sys.stderr.flush()
+        
         current_app.logger.info(f"=== ANAF API REQUEST: Lista Mesaje Factura ===")
+        current_app.logger.info(f"User ID: {self.user_id}")
         current_app.logger.info(f"URL: {url}")
         current_app.logger.info(f"CIF: {cif}")
         current_app.logger.info(f"Zile: {zile}")

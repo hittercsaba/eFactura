@@ -284,10 +284,19 @@ class OAuthService:
     
     def get_valid_token(self):
         """Get valid access token, refreshing if necessary"""
+        import sys
+        print(f"[OAUTH] get_valid_token called for user_id={self.user_id}", file=sys.stderr)
+        sys.stderr.flush()
+        
         anaf_token = AnafToken.query.filter_by(user_id=self.user_id).first()
         
         if not anaf_token:
-            raise ValueError("No ANAF token found for user")
+            print(f"[OAUTH] ERROR: No token found for user_id={self.user_id}", file=sys.stderr)
+            sys.stderr.flush()
+            raise ValueError(f"No ANAF token found for user {self.user_id}")
+        
+        print(f"[OAUTH] Token found for user_id={self.user_id}, token.user_id={anaf_token.user_id}, token_expiry={anaf_token.token_expiry}", file=sys.stderr)
+        sys.stderr.flush()
         
         # Check if token is expired or about to expire (within 5 minutes)
         token_expiry = anaf_token.token_expiry

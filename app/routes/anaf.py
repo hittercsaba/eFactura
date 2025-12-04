@@ -312,7 +312,18 @@ def sync_company(company_id):
         user_id=current_user.id
     ).first_or_404()
     
-    current_app.logger.info(f"Company found: {company.name} (CIF: {company.cif})")
+    # CRITICAL: Log user verification
+    import sys
+    print(f"[ROUTE] User verification: current_user.id={current_user.id}, company.user_id={company.user_id}, company.cif={company.cif}", file=sys.stderr)
+    sys.stderr.flush()
+    
+    if company.user_id != current_user.id:
+        print(f"[ROUTE] ERROR: User mismatch! current_user.id={current_user.id} != company.user_id={company.user_id}", file=sys.stderr)
+        sys.stderr.flush()
+        flash('You do not have permission to sync this company.', 'error')
+        return redirect(url_for('dashboard.index'))
+    
+    current_app.logger.info(f"Company found: {company.name} (CIF: {company.cif}, user_id: {company.user_id})")
     
     try:
         import sys
