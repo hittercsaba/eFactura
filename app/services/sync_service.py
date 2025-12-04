@@ -153,13 +153,14 @@ def _sync_company_invoices_impl(company_id, force=False):
         print(f"[SYNC_IMPL] Step 10: Services initialized, fetching invoice list for CIF {company.cif}", file=sys.stderr)
         sys.stderr.flush()
         
-        current_app.logger.info(f"Fetching invoice list for CIF {company.cif} (zile=90)...")
+        current_app.logger.info(f"Fetching invoice list for CIF {company.cif} (zile=60)...")
         
-        # Get invoice list (using 90 days - maximum allowed by ANAF)
+        # Get invoice list (using 60 days - maximum allowed by ANAF API)
+        # ANAF API only allows 1-60 days: "Numarul de zile trebuie sa fie intre 1 si 60"
         try:
-            print(f"[SYNC_IMPL] Step 11: About to call lista_mesaje_factura(cif={company.cif}, zile=90)", file=sys.stderr)
+            print(f"[SYNC_IMPL] Step 11: About to call lista_mesaje_factura(cif={company.cif}, zile=60)", file=sys.stderr)
             sys.stderr.flush()
-            invoice_list = anaf_service.lista_mesaje_factura(company.cif, zile=90)
+            invoice_list = anaf_service.lista_mesaje_factura(company.cif, zile=60)
             print(f"[SYNC_IMPL] Step 12: lista_mesaje_factura returned successfully", file=sys.stderr)
             sys.stderr.flush()
             current_app.logger.info(f"Successfully fetched invoice list from ANAF API")

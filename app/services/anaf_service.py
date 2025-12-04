@@ -70,9 +70,10 @@ class ANAFService:
         Returns:
             Dictionary with structure: {"mesaje": [...], "serial": "", "cui": "", "titlu": ""}
         """
-        # Validate zile parameter (1-90 per ANAF limits)
-        if not isinstance(zile, int) or zile < 1 or zile > 90:
-            raise ValueError(f"zile must be an integer between 1 and 90, got {zile}")
+        # Validate zile parameter (1-60 per ANAF limits)
+        # API error: "Numarul de zile trebuie sa fie intre 1 si 60"
+        if not isinstance(zile, int) or zile < 1 or zile > 60:
+            raise ValueError(f"zile must be an integer between 1 and 60, got {zile}")
         
         # Validate cif parameter (should be string with digits only)
         if not isinstance(cif, str) or not cif.isdigit():
