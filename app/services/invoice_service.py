@@ -7,6 +7,28 @@ class InvoiceService:
     """Service for parsing and processing invoices"""
     
     @staticmethod
+    def _extract_text_value(value):
+        """
+        Extract text value from xmltodict result.
+        Handles both string values and dictionary structures with #text key.
+        
+        Args:
+            value: Can be a string, dict with #text key, or None
+            
+        Returns:
+            String value or None
+        """
+        if value is None:
+            return None
+        if isinstance(value, dict):
+            # xmltodict returns dicts with #text key for text content
+            return value.get('#text') or value.get('text') or None
+        if isinstance(value, str):
+            return value
+        # Fallback: convert to string
+        return str(value) if value else None
+    
+    @staticmethod
     def parse_xml_to_json(xml_content):
         """
         Parse UBL XML invoice to JSON
@@ -61,18 +83,20 @@ class InvoiceService:
                 
                 if party_legal_entity:
                     # Try RegistrationName (UBL 2.1 standard)
-                    registration_name = party_legal_entity.get('cbc:RegistrationName') or \
-                                      party_legal_entity.get('RegistrationName') or \
-                                      party_legal_entity.get('registrationName')
+                    registration_name_raw = party_legal_entity.get('cbc:RegistrationName') or \
+                                          party_legal_entity.get('RegistrationName') or \
+                                          party_legal_entity.get('registrationName')
+                    registration_name = InvoiceService._extract_text_value(registration_name_raw)
                     if registration_name:
                         invoice_data['supplier_name'] = registration_name
                         invoice_data['issuer_name'] = registration_name  # Issuer is the supplier
                 
                 # Fallback: try PartyName (older UBL versions)
                 if not invoice_data['issuer_name']:
-                    party_name = supplier_party.get('cac:PartyName', {}).get('cbc:Name') or \
-                               supplier_party.get('PartyName', {}).get('Name') or \
-                               supplier_party.get('partyName', {}).get('name')
+                    party_name_raw = supplier_party.get('cac:PartyName', {}).get('cbc:Name') or \
+                                   supplier_party.get('PartyName', {}).get('Name') or \
+                                   supplier_party.get('partyName', {}).get('name')
+                    party_name = InvoiceService._extract_text_value(party_name_raw)
                     if party_name:
                         invoice_data['supplier_name'] = party_name
                         invoice_data['issuer_name'] = party_name
@@ -87,9 +111,10 @@ class InvoiceService:
                     tax_scheme = supplier_party.get('partyTaxScheme', {})
                 
                 if tax_scheme:
-                    company_id = tax_scheme.get('cbc:CompanyID') or \
-                               tax_scheme.get('CompanyID') or \
-                               tax_scheme.get('companyID')
+                    company_id_raw = tax_scheme.get('cbc:CompanyID') or \
+                                   tax_scheme.get('CompanyID') or \
+                                   tax_scheme.get('companyID')
+                    company_id = InvoiceService._extract_text_value(company_id_raw)
                     if company_id:
                         invoice_data['supplier_cif'] = company_id
             
@@ -113,17 +138,19 @@ class InvoiceService:
                     party_legal_entity = customer_party.get('partyLegalEntity', {})
                 
                 if party_legal_entity:
-                    registration_name = party_legal_entity.get('cbc:RegistrationName') or \
-                                      party_legal_entity.get('RegistrationName') or \
-                                      party_legal_entity.get('registrationName')
+                    registration_name_raw = party_legal_entity.get('cbc:RegistrationName') or \
+                                          party_legal_entity.get('RegistrationName') or \
+                                          party_legal_entity.get('registrationName')
+                    registration_name = InvoiceService._extract_text_value(registration_name_raw)
                     if registration_name:
                         invoice_data['receiver_name'] = registration_name
                 
                 # Fallback: try PartyName
                 if not invoice_data['receiver_name']:
-                    party_name = customer_party.get('cac:PartyName', {}).get('cbc:Name') or \
-                               customer_party.get('PartyName', {}).get('Name') or \
-                               customer_party.get('partyName', {}).get('name')
+                    party_name_raw = customer_party.get('cac:PartyName', {}).get('cbc:Name') or \
+                                   customer_party.get('PartyName', {}).get('Name') or \
+                                   customer_party.get('partyName', {}).get('name')
+                    party_name = InvoiceService._extract_text_value(party_name_raw)
                     if party_name:
                         invoice_data['receiver_name'] = party_name
                 
@@ -137,9 +164,10 @@ class InvoiceService:
                     tax_scheme = customer_party.get('partyTaxScheme', {})
                 
                 if tax_scheme:
-                    company_id = tax_scheme.get('cbc:CompanyID') or \
-                               tax_scheme.get('CompanyID') or \
-                               tax_scheme.get('companyID')
+                    company_id_raw = tax_scheme.get('cbc:CompanyID') or \
+                                   tax_scheme.get('CompanyID') or \
+                                   tax_scheme.get('companyID')
+                    company_id = InvoiceService._extract_text_value(company_id_raw)
                     if company_id:
                         invoice_data['receiver_cif'] = company_id
             

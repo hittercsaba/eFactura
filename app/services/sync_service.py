@@ -475,10 +475,20 @@ def _sync_company_invoices_impl(company_id, force=False):
                 synced_count += 1
                 
             except Exception as e:
-                current_app.logger.error(f"Error processing invoice item: {str(e)}")
+                current_app.logger.error(f"Error processing invoice item: {str(e)}", exc_info=True)
+                # Rollback on error to allow processing of remaining invoices
+                try:
+                    db.session.rollback()
+                except Exception as rollback_error:
+                    current_app.logger.error(f"Error during rollback: {str(rollback_error)}")
                 continue
         
-        db.session.commit()
+        try:
+            db.session.commit()
+        except Exception as commit_error:
+            current_app.logger.error(f"Error committing invoice batch: {str(commit_error)}", exc_info=True)
+            db.session.rollback()
+            raise
         current_app.logger.info(f"=== SYNC COMPLETE FOR COMPANY {company_id} ===")
         current_app.logger.info(f"Successfully synced {synced_count} new invoices for company {company_id} ({company.name})")
         current_app.logger.info("=" * 60)
