@@ -183,8 +183,8 @@ def _sync_company_invoices_impl(company_id, force=False):
         
         current_app.logger.info(f"Fetching invoice list for CIF {company.cif} (zile=60)...")
         
-        # Get invoice list (using 60 days - maximum allowed by ANAF API)
-        # ANAF API only allows 1-60 days: "Numarul de zile trebuie sa fie intre 1 si 60"
+        # Get invoice list (using 60 days - using paginated endpoint which supports 1-90 days)
+        # The paginated endpoint (listaMesajePaginatieFactura) uses startTime/endTime timestamps
         try:
             print(f"[SYNC_IMPL] Step 11: About to call lista_mesaje_factura(cif={company.cif}, zile=60)", file=sys.stderr)
             sys.stderr.flush()
@@ -238,6 +238,32 @@ def _sync_company_invoices_impl(company_id, force=False):
         
         print(f"[SYNC_IMPL] Step 15: Extracted {len(invoices_data)} messages from response", file=sys.stderr)
         sys.stderr.flush()
+        
+        # Check if response indicates token access issues
+        if isinstance(invoice_list, dict):
+            cui_field = invoice_list.get('cui', '')
+            if cui_field and ',' in str(cui_field):
+                # CUI field contains comma-separated list of accessible CIFs
+                accessible_cifs = [c.strip() for c in str(cui_field).split(',')]
+                print(f"[SYNC_IMPL] Token has access to CIFs: {accessible_cifs}", file=sys.stderr)
+                sys.stderr.flush()
+                
+                if company.cif not in accessible_cifs:
+                    error_msg = f"Token does not have access to CIF {company.cif}. Token has access to: {accessible_cifs}"
+                    print(f"[SYNC_IMPL] WARNING: {error_msg}", file=sys.stderr)
+                    sys.stderr.flush()
+                    current_app.logger.warning(error_msg)
+                    current_app.logger.warning(f"User {company.user_id} needs to re-authenticate with ANAF to get access to CIF {company.cif}")
+            elif len(invoices_data) == 0 and cui_field == company.cif:
+                # Empty response but CUI matches - might be legitimate (no invoices)
+                print(f"[SYNC_IMPL] Empty response for CIF {company.cif} - token has access but no invoices found", file=sys.stderr)
+                sys.stderr.flush()
+            elif len(invoices_data) == 0:
+                # Empty response - might indicate access issue
+                print(f"[SYNC_IMPL] WARNING: Empty invoice list. Response CUI field: '{cui_field}', Requested CIF: {company.cif}", file=sys.stderr)
+                sys.stderr.flush()
+                if cui_field and cui_field != company.cif:
+                    current_app.logger.warning(f"Token may not have access to CIF {company.cif}. Response CUI: {cui_field}")
         
         current_app.logger.info(f"Extracted {len(invoices_data)} messages from response")
         current_app.logger.info("=" * 60)
