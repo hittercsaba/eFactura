@@ -146,6 +146,7 @@ class ANAFService:
         combined_cui = ''
         combined_titlu = ''
         pagina = 1  # Start from page 1
+        pages_fetched = 0  # Track number of pages successfully fetched
         
         current_app.logger.info(f"=== ANAF API REQUEST: Lista Mesaje Factura (Paginated) ===")
         current_app.logger.info(f"CIF: {cif}, Zile: {zile}, StartTime: {start_time_ms}, EndTime: {end_time_ms}")
@@ -201,11 +202,22 @@ class ANAFService:
                 # Check for errors
                 if 'eroare' in response_data:
                     error_msg = response_data['eroare']
-                    current_app.logger.error(f"ANAF API error on page {pagina}: {error_msg}")
-                    raise ValueError(f"ANAF API error: {error_msg}")
+                    # Check if error indicates we've exceeded the total number of pages
+                    # Error message: "Pagina solicitata X este mai mare decat numarul toatal de pagini Y"
+                    if 'mai mare decat numarul toatal de pagini' in error_msg.lower() or 'mai mare decat numarul total de pagini' in error_msg.lower():
+                        # This is a normal end-of-pagination condition, not a real error
+                        current_app.logger.info(f"Reached end of pagination: {error_msg}")
+                        break
+                    else:
+                        # This is a real error, raise it
+                        current_app.logger.error(f"ANAF API error on page {pagina}: {error_msg}")
+                        raise ValueError(f"ANAF API error: {error_msg}")
                 
                 # Extract messages from current page
                 page_mesaje = response_data.get('mesaje', [])
+                
+                # Increment pages_fetched since we successfully fetched this page
+                pages_fetched += 1
                 
                 if not page_mesaje:
                     # No more messages, stop pagination
@@ -223,11 +235,6 @@ class ANAFService:
                 
                 current_app.logger.info(f"Page {pagina}: Found {len(page_mesaje)} messages (total so far: {len(all_mesaje)})")
                 
-                # Check if we've reached the last page
-                # The API doesn't specify page size, so we check if we got fewer messages than expected
-                # If we get an empty page or the response indicates it's the last page, stop
-                # For now, we'll continue until we get an empty page
-                
                 # Move to next page
                 pagina += 1
                 
@@ -236,7 +243,7 @@ class ANAFService:
                     current_app.logger.warning(f"Reached maximum page limit (1000), stopping pagination")
                     break
             
-            current_app.logger.info(f"Pagination complete: Total messages fetched: {len(all_mesaje)} from {pagina - 1} page(s)")
+            current_app.logger.info(f"Pagination complete: Total messages fetched: {len(all_mesaje)} from {pages_fetched} page(s)")
             current_app.logger.info("=" * 60)
             
             # Return combined result in same format as non-paginated version
