@@ -157,11 +157,22 @@ def _sync_company_invoices_impl(company_id, force=False):
         
         # Get invoice list
         try:
+            print(f"[SYNC_IMPL] Step 11: About to call lista_mesaje_factura(cif={company.cif}, zile=60)", file=sys.stderr)
+            sys.stderr.flush()
             invoice_list = anaf_service.lista_mesaje_factura(company.cif, zile=60)
+            print(f"[SYNC_IMPL] Step 12: lista_mesaje_factura returned successfully", file=sys.stderr)
+            sys.stderr.flush()
             current_app.logger.info(f"Successfully fetched invoice list from ANAF API")
         except Exception as e:
+            print(f"[SYNC_IMPL] EXCEPTION in lista_mesaje_factura: {type(e).__name__}: {str(e)}", file=sys.stderr)
+            import traceback
+            traceback.print_exc(file=sys.stderr)
+            sys.stderr.flush()
             current_app.logger.error(f"Error fetching invoice list for company {company_id} (CIF: {company.cif}): {str(e)}", exc_info=True)
             return
+        
+        print(f"[SYNC_IMPL] Step 13: Processing invoice list", file=sys.stderr)
+        sys.stderr.flush()
         
         # Log raw response for debugging
         current_app.logger.info(f"=== PROCESSING INVOICE LIST FOR COMPANY {company_id} ===")
