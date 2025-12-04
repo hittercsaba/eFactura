@@ -153,13 +153,13 @@ def _sync_company_invoices_impl(company_id, force=False):
         print(f"[SYNC_IMPL] Step 10: Services initialized, fetching invoice list for CIF {company.cif}", file=sys.stderr)
         sys.stderr.flush()
         
-        current_app.logger.info(f"Fetching invoice list for CIF {company.cif} (zile=60)...")
+        current_app.logger.info(f"Fetching invoice list for CIF {company.cif} (zile=90)...")
         
-        # Get invoice list
+        # Get invoice list (using 90 days - maximum allowed by ANAF)
         try:
-            print(f"[SYNC_IMPL] Step 11: About to call lista_mesaje_factura(cif={company.cif}, zile=60)", file=sys.stderr)
+            print(f"[SYNC_IMPL] Step 11: About to call lista_mesaje_factura(cif={company.cif}, zile=90)", file=sys.stderr)
             sys.stderr.flush()
-            invoice_list = anaf_service.lista_mesaje_factura(company.cif, zile=60)
+            invoice_list = anaf_service.lista_mesaje_factura(company.cif, zile=90)
             print(f"[SYNC_IMPL] Step 12: lista_mesaje_factura returned successfully", file=sys.stderr)
             sys.stderr.flush()
             current_app.logger.info(f"Successfully fetched invoice list from ANAF API")
@@ -184,6 +184,7 @@ def _sync_company_invoices_impl(company_id, force=False):
             current_app.logger.info(f"Invoice list keys: {invoice_list.keys()}")
             current_app.logger.info(f"Invoice list (first 300 chars): {str(invoice_list)[:300]}")
             print(f"[SYNC_IMPL] Invoice list keys: {list(invoice_list.keys())}", file=sys.stderr)
+            print(f"[SYNC_IMPL] Full API response: {invoice_list}", file=sys.stderr)
             sys.stderr.flush()
         else:
             current_app.logger.info(f"Invoice list length: {len(invoice_list) if isinstance(invoice_list, list) else 'N/A'}")
