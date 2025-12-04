@@ -303,11 +303,12 @@ def sync_company(company_id):
     
     try:
         from app.services.sync_service import sync_company_invoices
-        sync_company_invoices(company_id)
-        flash(f'Invoice sync started for {company.name}.', 'success')
+        current_app.logger.info(f"Manual sync triggered for company {company_id} ({company.name}) by user {current_user.id}")
+        sync_company_invoices(company_id, force=True)  # Force sync even if auto_sync_enabled is False
+        flash(f'Invoice sync completed for {company.name}.', 'success')
     except Exception as e:
-        current_app.logger.error(f"Manual sync error: {str(e)}")
-        flash('Error starting sync. Please try again.', 'error')
+        current_app.logger.error(f"Manual sync error for company {company_id}: {str(e)}", exc_info=True)
+        flash(f'Error during sync: {str(e)}', 'error')
     
     return redirect(url_for('dashboard.index'))
 

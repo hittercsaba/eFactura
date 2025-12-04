@@ -12,44 +12,73 @@ from app.services.invoice_service import InvoiceService
 scheduler = None
 app_instance = None  # Store app instance for scheduler context
 
-def sync_company_invoices(company_id):
-    """Sync invoices for a specific company"""
+def sync_company_invoices(company_id, force=False):
+    """
+    Sync invoices for a specific company
+    
+    Args:
+        company_id: ID of the company to sync
+        force: If True, sync even if auto_sync_enabled is False (for manual syncs)
+    """
     global app_instance
     if not app_instance:
         # Fallback: try to use current_app if available
         try:
             with current_app.app_context():
-                _sync_company_invoices_impl(company_id)
+                _sync_company_invoices_impl(company_id, force=force)
         except RuntimeError:
             # No application context available
             return
     else:
         # Use stored app instance
         with app_instance.app_context():
-            _sync_company_invoices_impl(company_id)
+            _sync_company_invoices_impl(company_id, force=force)
 
-def _sync_company_invoices_impl(company_id):
-    """Internal implementation of sync_company_invoices"""
+def _sync_company_invoices_impl(company_id, force=False):
+    """
+    Internal implementation of sync_company_invoices
+    
+    Args:
+        company_id: ID of the company to sync
+        force: If True, sync even if auto_sync_enabled is False (for manual syncs)
+    """
     try:
+        current_app.logger.info(f"=== STARTING SYNC FOR COMPANY {company_id} ===")
+        current_app.logger.info(f"Force mode: {force}")
+        
         company = Company.query.get(company_id)
-        if not company or not company.auto_sync_enabled:
+        if not company:
+            current_app.logger.error(f"Company {company_id} not found")
+            return
+        
+        current_app.logger.info(f"Company found: {company.name} (CIF: {company.cif})")
+        current_app.logger.info(f"Auto sync enabled: {company.auto_sync_enabled}")
+        
+        # Check auto_sync_enabled unless forced (for manual syncs)
+        if not force and not company.auto_sync_enabled:
+            current_app.logger.info(f"Skipping sync for company {company_id} - auto_sync_enabled is False (use force=True for manual sync)")
             return
         
         # Check if user has valid token
         anaf_token = AnafToken.query.filter_by(user_id=company.user_id).first()
         if not anaf_token:
-            current_app.logger.warning(f"No ANAF token for company {company_id}")
+            current_app.logger.error(f"No ANAF token found for company {company_id} (user_id: {company.user_id})")
             return
+        
+        current_app.logger.info(f"ANAF token found for user {company.user_id}")
         
         # Initialize services
         anaf_service = ANAFService(company.user_id)
         invoice_service = InvoiceService()
         
+        current_app.logger.info(f"Fetching invoice list for CIF {company.cif} (zile=60)...")
+        
         # Get invoice list
         try:
             invoice_list = anaf_service.lista_mesaje_factura(company.cif, zile=60)
+            current_app.logger.info(f"Successfully fetched invoice list from ANAF API")
         except Exception as e:
-            current_app.logger.error(f"Error fetching invoice list for company {company_id}: {str(e)}")
+            current_app.logger.error(f"Error fetching invoice list for company {company_id} (CIF: {company.cif}): {str(e)}", exc_info=True)
             return
         
         # Log raw response for debugging
@@ -286,11 +315,16 @@ def _sync_company_invoices_impl(company_id):
                 continue
         
         db.session.commit()
-        current_app.logger.info(f"Synced {synced_count} invoices for company {company_id}")
+        current_app.logger.info(f"=== SYNC COMPLETE FOR COMPANY {company_id} ===")
+        current_app.logger.info(f"Successfully synced {synced_count} new invoices for company {company_id} ({company.name})")
+        current_app.logger.info("=" * 60)
         
     except Exception as e:
         db.session.rollback()
-        current_app.logger.error(f"Error syncing company {company_id}: {str(e)}")
+        current_app.logger.error(f"=== SYNC FAILED FOR COMPANY {company_id} ===")
+        current_app.logger.error(f"Error syncing company {company_id}: {str(e)}", exc_info=True)
+        current_app.logger.error("=" * 60)
+        # Don't re-raise - let the route handle error messaging to user
 
 def sync_all_companies():
     """Sync invoices for all companies with auto_sync enabled"""
