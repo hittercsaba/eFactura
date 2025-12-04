@@ -60,19 +60,19 @@
             <ul class="nav nav-tabs mb-3" role="tablist">
                 <li class="nav-item" role="presentation">
                     <a class="nav-link {% if active_tab == 'all' %}active{% endif %}" 
-                       href="{{ url_for('dashboard.index', type='all') }}">
+                       href="{{ url_for('dashboard.index', type='all', sort_by=sort_by, sort_order=sort_order) }}">
                         All Invoices
                     </a>
                 </li>
                 <li class="nav-item" role="presentation">
                     <a class="nav-link {% if active_tab == 'received' %}active{% endif %}" 
-                       href="{{ url_for('dashboard.index', type='received') }}">
+                       href="{{ url_for('dashboard.index', type='received', sort_by=sort_by, sort_order=sort_order) }}">
                         Received (FACTURA PRIMITA)
                     </a>
                 </li>
                 <li class="nav-item" role="presentation">
                     <a class="nav-link {% if active_tab == 'sent' %}active{% endif %}" 
-                       href="{{ url_for('dashboard.index', type='sent') }}">
+                       href="{{ url_for('dashboard.index', type='sent', sort_by=sort_by, sort_order=sort_order) }}">
                         Sent (FACTURA TRIMISA)
                     </a>
                 </li>
@@ -84,14 +84,70 @@
                         <thead>
                             <tr>
                                 <th>Type</th>
-                                <th>ANAF ID</th>
+                                <th>
+                                    <a href="{{ url_for('dashboard.index', type=active_tab, sort_by='anaf_id', sort_order=(('asc' if sort_by == 'anaf_id' and sort_order == 'desc' else 'desc') if sort_by == 'anaf_id' else 'asc')) }}" 
+                                       class="text-decoration-none text-dark">
+                                        ANAF ID
+                                        {% if sort_by == 'anaf_id' %}
+                                            {% if sort_order == 'asc' %}
+                                                <i class="bi bi-arrow-up"></i>
+                                            {% else %}
+                                                <i class="bi bi-arrow-down"></i>
+                                            {% endif %}
+                                        {% else %}
+                                            <i class="bi bi-arrow-up-down text-muted" style="opacity: 0.3;"></i>
+                                        {% endif %}
+                                    </a>
+                                </th>
                                 <th>Issuer CIF</th>
                                 <th>Issuer Name</th>
                                 <th>Receiver CIF</th>
                                 <th>Receiver Name</th>
-                                <th>Date</th>
-                                <th>Total Amount</th>
-                                <th>Synced At</th>
+                                <th>
+                                    <a href="{{ url_for('dashboard.index', type=active_tab, sort_by='invoice_date', sort_order=(('asc' if sort_by == 'invoice_date' and sort_order == 'desc' else 'desc') if sort_by == 'invoice_date' else 'desc')) }}" 
+                                       class="text-decoration-none text-dark">
+                                        Date
+                                        {% if sort_by == 'invoice_date' %}
+                                            {% if sort_order == 'asc' %}
+                                                <i class="bi bi-arrow-up"></i>
+                                            {% else %}
+                                                <i class="bi bi-arrow-down"></i>
+                                            {% endif %}
+                                        {% else %}
+                                            <i class="bi bi-arrow-up-down text-muted" style="opacity: 0.3;"></i>
+                                        {% endif %}
+                                    </a>
+                                </th>
+                                <th>
+                                    <a href="{{ url_for('dashboard.index', type=active_tab, sort_by='total_amount', sort_order=(('asc' if sort_by == 'total_amount' and sort_order == 'desc' else 'desc') if sort_by == 'total_amount' else 'asc')) }}" 
+                                       class="text-decoration-none text-dark">
+                                        Total Amount
+                                        {% if sort_by == 'total_amount' %}
+                                            {% if sort_order == 'asc' %}
+                                                <i class="bi bi-arrow-up"></i>
+                                            {% else %}
+                                                <i class="bi bi-arrow-down"></i>
+                                            {% endif %}
+                                        {% else %}
+                                            <i class="bi bi-arrow-up-down text-muted" style="opacity: 0.3;"></i>
+                                        {% endif %}
+                                    </a>
+                                </th>
+                                <th>
+                                    <a href="{{ url_for('dashboard.index', type=active_tab, sort_by='synced_at', sort_order=(('asc' if sort_by == 'synced_at' and sort_order == 'desc' else 'desc') if sort_by == 'synced_at' else 'asc')) }}" 
+                                       class="text-decoration-none text-dark">
+                                        Synced At
+                                        {% if sort_by == 'synced_at' %}
+                                            {% if sort_order == 'asc' %}
+                                                <i class="bi bi-arrow-up"></i>
+                                            {% else %}
+                                                <i class="bi bi-arrow-down"></i>
+                                            {% endif %}
+                                        {% else %}
+                                            <i class="bi bi-arrow-up-down text-muted" style="opacity: 0.3;"></i>
+                                        {% endif %}
+                                    </a>
+                                </th>
                                 <th>Download</th>
                             </tr>
                         </thead>
@@ -140,7 +196,7 @@
                     <ul class="pagination justify-content-center">
                         {% if invoices.has_prev %}
                             <li class="page-item">
-                                <a class="page-link" href="?page={{ invoices.prev_num }}&type={{ active_tab }}">Previous</a>
+                                <a class="page-link" href="?page={{ invoices.prev_num }}&type={{ active_tab }}&sort_by={{ sort_by }}&sort_order={{ sort_order }}">Previous</a>
                             </li>
                         {% else %}
                             <li class="page-item disabled">
@@ -156,7 +212,7 @@
                                     </li>
                                 {% else %}
                                     <li class="page-item">
-                                        <a class="page-link" href="?page={{ page_num }}&type={{ active_tab }}">{{ page_num }}</a>
+                                        <a class="page-link" href="?page={{ page_num }}&type={{ active_tab }}&sort_by={{ sort_by }}&sort_order={{ sort_order }}">{{ page_num }}</a>
                                     </li>
                                 {% endif %}
                             {% else %}
@@ -168,7 +224,7 @@
                         
                         {% if invoices.has_next %}
                             <li class="page-item">
-                                <a class="page-link" href="?page={{ invoices.next_num }}&type={{ active_tab }}">Next</a>
+                                <a class="page-link" href="?page={{ invoices.next_num }}&type={{ active_tab }}&sort_by={{ sort_by }}&sort_order={{ sort_order }}">Next</a>
                             </li>
                         {% else %}
                             <li class="page-item disabled">

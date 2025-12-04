@@ -3,7 +3,7 @@ from flask_login import login_required, current_user
 from app.models import Company, Invoice, db
 from app.utils.decorators import approved_required
 from app.services.anaf_service import ANAFService
-from sqlalchemy import desc
+from sqlalchemy import desc, asc
 import zipfile
 import io
 
@@ -24,7 +24,9 @@ def index():
             companies=[],
             selected_company=None,
             invoices=None,
-            active_tab='all'
+            active_tab='all',
+            sort_by='invoice_date',
+            sort_order='desc'
         )
     
     # Get selected company from session or default to first
@@ -55,6 +57,25 @@ def index():
     if invoice_type_filter not in ('all', 'received', 'sent'):
         invoice_type_filter = 'all'
     
+    # Get sorting parameters
+    sort_by = request.args.get('sort_by', 'invoice_date').strip().lower()
+    sort_order = request.args.get('sort_order', 'desc').strip().lower()
+    
+    # Validate sort_by against allowed columns
+    allowed_sort_columns = {
+        'invoice_date': Invoice.invoice_date,
+        'total_amount': Invoice.total_amount,
+        'synced_at': Invoice.synced_at,
+        'anaf_id': Invoice.anaf_id
+    }
+    
+    if sort_by not in allowed_sort_columns:
+        sort_by = 'invoice_date'
+    
+    # Validate sort_order
+    if sort_order not in ('asc', 'desc'):
+        sort_order = 'desc'
+    
     per_page = 50
     
     # Build query with optional type filter
@@ -66,15 +87,23 @@ def index():
         query = query.filter_by(invoice_type='FACTURA TRIMISA')
     # else 'all' - no filter
     
-    invoices = query.order_by(desc(Invoice.synced_at))\
-        .paginate(page=page, per_page=per_page, error_out=False)
+    # Apply sorting
+    sort_column = allowed_sort_columns[sort_by]
+    if sort_order == 'asc':
+        query = query.order_by(asc(sort_column))
+    else:
+        query = query.order_by(desc(sort_column))
+    
+    invoices = query.paginate(page=page, per_page=per_page, error_out=False)
     
     return render_template(
         'dashboard.html',
         companies=companies,
         selected_company=selected_company,
         invoices=invoices,
-        active_tab=invoice_type_filter
+        active_tab=invoice_type_filter,
+        sort_by=sort_by,
+        sort_order=sort_order
     )
 
 @dashboard_bp.route('/switch-company', methods=['POST'])
