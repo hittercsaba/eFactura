@@ -1,5 +1,6 @@
 import requests
 import ssl
+import json
 from requests.adapters import HTTPAdapter
 from urllib3.util.ssl_ import create_urllib3_context
 from flask import current_app
@@ -111,16 +112,62 @@ class ANAFService:
             # Parse and validate response structure
             response_data = response.json()
             
+            # Handle potential response wrapping (e.g., {"data": {...}} or {"result": {...}})
+            # Check if response is wrapped in a common wrapper structure
+            if isinstance(response_data, dict):
+                # Check for common wrapper keys
+                if 'data' in response_data and isinstance(response_data['data'], dict):
+                    current_app.logger.info("Response wrapped in 'data' key - unwrapping")
+                    response_data = response_data['data']
+                elif 'result' in response_data and isinstance(response_data['result'], dict):
+                    current_app.logger.info("Response wrapped in 'result' key - unwrapping")
+                    response_data = response_data['result']
+                elif 'response' in response_data and isinstance(response_data['response'], dict):
+                    current_app.logger.info("Response wrapped in 'response' key - unwrapping")
+                    response_data = response_data['response']
+            
             # Validate response structure per ANAF documentation
             if not isinstance(response_data, dict):
                 current_app.logger.error(f"Unexpected response type: {type(response_data)}")
+                current_app.logger.error(f"Response content: {response.text[:500]}")
                 raise ValueError("Response is not a dictionary")
             
             # Expected keys: mesaje, serial, cui, titlu
             expected_keys = ['mesaje', 'serial', 'cui', 'titlu']
             missing_keys = [key for key in expected_keys if key not in response_data]
+            
+            # Check if this might be an error response
+            error_indicator_keys = ['error', 'message', 'error_description', 'erori', 'mesaj']
+            has_error_indicators = any(key in response_data for key in error_indicator_keys)
+            
             if missing_keys:
+                # Log full response structure for debugging
                 current_app.logger.warning(f"Response missing expected keys: {missing_keys}")
+                current_app.logger.warning(f"Response structure: {list(response_data.keys())}")
+                
+                # Log full response body for debugging (truncated for safety)
+                response_str = json.dumps(response_data, indent=2, ensure_ascii=False)
+                current_app.logger.warning(f"Full response body (first 1000 chars): {response_str[:1000]}")
+                
+                # Check if it's an error response
+                if has_error_indicators:
+                    error_msg = response_data.get('error') or response_data.get('message') or response_data.get('error_description') or response_data.get('mesaj') or response_data.get('erori')
+                    current_app.logger.error(f"ANAF API returned error response: {error_msg}")
+                    raise ValueError(f"ANAF API error: {error_msg or 'Unknown error'}")
+                
+                # If response is empty or has no mesaje, provide default structure
+                # This allows the sync to continue gracefully with empty results
+                if 'mesaje' not in response_data:
+                    current_app.logger.warning(f"Response missing 'mesaje' key - treating as empty message list")
+                    response_data['mesaje'] = []
+                
+                # Provide defaults for other missing keys
+                if 'serial' not in response_data:
+                    response_data['serial'] = ''
+                if 'cui' not in response_data:
+                    response_data['cui'] = cif  # Use provided CIF as fallback
+                if 'titlu' not in response_data:
+                    response_data['titlu'] = ''
             
             # Log response details
             mesaje_count = len(response_data.get('mesaje', []))
