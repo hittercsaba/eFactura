@@ -1,5 +1,6 @@
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
+from apscheduler.triggers.date import DateTrigger
 from datetime import datetime, timedelta, timezone
 from flask import current_app
 import zipfile
@@ -560,4 +561,61 @@ def init_scheduler(app):
     
     scheduler.start()
     app.logger.info("Background scheduler started")
+
+def schedule_sync_job(company_id, force=False):
+    """
+    Schedule a one-time sync job to run in the background immediately.
+    
+    Args:
+        company_id: ID of the company to sync
+        force: If True, sync even if auto_sync_enabled is False (for manual syncs)
+    
+    Returns:
+        True if job was scheduled successfully, False otherwise
+    """
+    global scheduler
+    
+    if scheduler is None:
+        # Scheduler not initialized
+        try:
+            from flask import current_app
+            current_app.logger.error("Scheduler not initialized - cannot schedule sync job")
+        except RuntimeError:
+            import logging
+            logging.error("Cannot schedule sync job - scheduler not initialized")
+        return False
+    
+    # Generate unique job ID to avoid conflicts
+    job_id = f"sync_company_{company_id}_{datetime.now(timezone.utc).timestamp()}"
+    
+    try:
+        # Schedule job to run immediately (use current time + 1 second to ensure it's in the future)
+        run_date = datetime.now(timezone.utc) + timedelta(seconds=1)
+        scheduler.add_job(
+            func=sync_company_invoices,
+            trigger=DateTrigger(run_date=run_date),
+            args=[company_id],
+            kwargs={'force': force},
+            id=job_id,
+            name=f'Sync company {company_id}',
+            replace_existing=False  # Don't replace - each sync is a separate job
+        )
+        
+        # Log the scheduled job
+        try:
+            from flask import current_app
+            current_app.logger.info(f"Scheduled background sync job for company {company_id} (job_id: {job_id})")
+        except RuntimeError:
+            import logging
+            logging.info(f"Scheduled background sync job for company {company_id} (job_id: {job_id})")
+        
+        return True
+    except Exception as e:
+        try:
+            from flask import current_app
+            current_app.logger.error(f"Error scheduling sync job for company {company_id}: {str(e)}", exc_info=True)
+        except RuntimeError:
+            import logging
+            logging.error(f"Error scheduling sync job for company {company_id}: {str(e)}", exc_info=True)
+        return False
 

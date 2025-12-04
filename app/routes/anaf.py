@@ -326,39 +326,29 @@ def sync_company(company_id):
     current_app.logger.info(f"Company found: {company.name} (CIF: {company.cif}, user_id: {company.user_id})")
     
     try:
-        import sys
-        print(f"[ROUTE] About to import sync_company_invoices", file=sys.stderr)
-        from app.services.sync_service import sync_company_invoices
-        print(f"[ROUTE] Successfully imported sync_company_invoices", file=sys.stderr)
+        from app.services.sync_service import schedule_sync_job
         
-        current_app.logger.info(f"About to call sync_company_invoices(company_id={company_id}, force=True)...")
-        print(f"[ROUTE] About to call sync_company_invoices(company_id={company_id}, force=True)...", file=sys.stderr)
+        current_app.logger.info(f"Scheduling background sync job for company {company_id}...")
         
-        # Call sync and capture any exceptions
-        try:
-            print(f"[ROUTE] CALLING sync_company_invoices NOW...", file=sys.stderr)
-            sync_company_invoices(company_id, force=True)  # Force sync even if auto_sync_enabled is False
-            print(f"[ROUTE] sync_company_invoices RETURNED (no exception)", file=sys.stderr)
-            current_app.logger.info(f"Sync function returned (no exception raised) for company {company_id}")
-        except Exception as sync_error:
-            print(f"[ROUTE] EXCEPTION during sync_company_invoices: {str(sync_error)}", file=sys.stderr)
-            import traceback
-            traceback.print_exc(file=sys.stderr)
-            current_app.logger.error(f"EXCEPTION during sync_company_invoices call: {str(sync_error)}", exc_info=True)
-            raise  # Re-raise to be caught by outer exception handler
+        # Schedule sync job to run in background
+        job_scheduled = schedule_sync_job(company_id, force=True)
         
-        current_app.logger.info(f"Sync completed successfully for company {company_id}")
-        print(f"[ROUTE] Sync completed successfully for company {company_id}", file=sys.stderr)
-        flash(f'Invoice sync completed for {company.name}.', 'success')
+        if job_scheduled:
+            current_app.logger.info(f"Background sync job scheduled successfully for company {company_id}")
+            flash(f'Invoice sync started for {company.name}. The sync is running in the background and may take a few minutes.', 'success')
+        else:
+            current_app.logger.error(f"Failed to schedule background sync job for company {company_id}")
+            flash(f'Error: Could not start sync for {company.name}. Please try again later.', 'error')
+    
     except Exception as e:
         import sys
         print(f"[ROUTE] EXCEPTION in sync route: {str(e)}", file=sys.stderr)
         import traceback
         traceback.print_exc(file=sys.stderr)
         current_app.logger.error(f"EXCEPTION in sync route for company {company_id}: {str(e)}", exc_info=True)
-        flash(f'Error during sync: {str(e)}', 'error')
+        flash(f'Error starting sync: {str(e)}', 'error')
     
-    current_app.logger.info(f"Redirecting to dashboard after sync for company {company_id}")
+    current_app.logger.info(f"Redirecting to dashboard after scheduling sync for company {company_id}")
     return redirect(url_for('dashboard.index'))
 
 
