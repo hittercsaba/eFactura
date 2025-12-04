@@ -117,22 +117,41 @@ def _sync_company_invoices_impl(company_id, force=False):
         current_app.logger.info(f"Company found: {company.name} (CIF: {company.cif})")
         current_app.logger.info(f"Auto sync enabled: {company.auto_sync_enabled}")
         
+        print(f"[SYNC_IMPL] Step 6: Checking auto_sync_enabled. force={force}, auto_sync_enabled={company.auto_sync_enabled}", file=sys.stderr)
+        sys.stderr.flush()
+        
         # Check auto_sync_enabled unless forced (for manual syncs)
         if not force and not company.auto_sync_enabled:
+            print(f"[SYNC_IMPL] EARLY RETURN: Skipping sync - auto_sync not enabled and force=False", file=sys.stderr)
+            sys.stderr.flush()
             current_app.logger.info(f"Skipping sync for company {company_id} - auto_sync_enabled is False (use force=True for manual sync)")
             return
         
+        print(f"[SYNC_IMPL] Step 7: Auto sync check passed, checking for ANAF token (user_id={company.user_id})", file=sys.stderr)
+        sys.stderr.flush()
+        
         # Check if user has valid token
         anaf_token = AnafToken.query.filter_by(user_id=company.user_id).first()
+        print(f"[SYNC_IMPL] Step 8: Token query returned: {anaf_token}", file=sys.stderr)
+        sys.stderr.flush()
+        
         if not anaf_token:
+            print(f"[SYNC_IMPL] EARLY RETURN: No ANAF token found for user {company.user_id}", file=sys.stderr)
+            sys.stderr.flush()
             current_app.logger.error(f"No ANAF token found for company {company_id} (user_id: {company.user_id})")
             return
+        
+        print(f"[SYNC_IMPL] Step 9: ANAF token found, initializing services", file=sys.stderr)
+        sys.stderr.flush()
         
         current_app.logger.info(f"ANAF token found for user {company.user_id}")
         
         # Initialize services
         anaf_service = ANAFService(company.user_id)
         invoice_service = InvoiceService()
+        
+        print(f"[SYNC_IMPL] Step 10: Services initialized, fetching invoice list for CIF {company.cif}", file=sys.stderr)
+        sys.stderr.flush()
         
         current_app.logger.info(f"Fetching invoice list for CIF {company.cif} (zile=60)...")
         
