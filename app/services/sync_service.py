@@ -81,19 +81,38 @@ def _sync_company_invoices_impl(company_id, force=False):
     # Use print as backup to ensure we always see this
     import sys
     print(f"[SYNC_IMPL] START: _sync_company_invoices_impl(company_id={company_id}, force={force})", file=sys.stderr)
+    sys.stderr.flush()
     
     try:
+        print(f"[SYNC_IMPL] Step 1: Entered try block", file=sys.stderr)
+        sys.stderr.flush()
+        
         try:
             current_app.logger.info(f"=== STARTING SYNC FOR COMPANY {company_id} ===")
             current_app.logger.info(f"Force mode: {force}")
-        except:
-            print(f"[SYNC_IMPL] === STARTING SYNC FOR COMPANY {company_id} ===")
-            print(f"[SYNC_IMPL] Force mode: {force}")
+            print(f"[SYNC_IMPL] Step 2: Logged to Flask logger", file=sys.stderr)
+            sys.stderr.flush()
+        except Exception as log_err:
+            print(f"[SYNC_IMPL] === STARTING SYNC FOR COMPANY {company_id} ===", file=sys.stderr)
+            print(f"[SYNC_IMPL] Force mode: {force}", file=sys.stderr)
+            print(f"[SYNC_IMPL] Logger error: {log_err}", file=sys.stderr)
+            sys.stderr.flush()
+        
+        print(f"[SYNC_IMPL] Step 3: About to query company {company_id}", file=sys.stderr)
+        sys.stderr.flush()
         
         company = Company.query.get(company_id)
+        print(f"[SYNC_IMPL] Step 4: Company query returned: {company}", file=sys.stderr)
+        sys.stderr.flush()
+        
         if not company:
+            print(f"[SYNC_IMPL] ERROR: Company {company_id} not found", file=sys.stderr)
+            sys.stderr.flush()
             current_app.logger.error(f"Company {company_id} not found")
             return
+        
+        print(f"[SYNC_IMPL] Step 5: Company found: {company.name} (CIF: {company.cif})", file=sys.stderr)
+        sys.stderr.flush()
         
         current_app.logger.info(f"Company found: {company.name} (CIF: {company.cif})")
         current_app.logger.info(f"Auto sync enabled: {company.auto_sync_enabled}")
