@@ -132,12 +132,23 @@ class ANAFService:
                 current_app.logger.error(f"Response content: {response.text[:500]}")
                 raise ValueError("Response is not a dictionary")
             
+            # Check for error response first (even if all expected keys are present)
+            eroare_msg = response_data.get('eroare', '')
+            is_pagination_error = False
+            if eroare_msg:
+                if 'paginatie' in eroare_msg.lower():
+                    is_pagination_error = True
+                    current_app.logger.info(f"Detected pagination requirement: {eroare_msg}")
+                    # Automatically switch to paginated endpoint
+                    current_app.logger.info(f"Switching to paginated endpoint to fetch all messages for CIF {cif}")
+                    return self.lista_mesaje_factura_paginated(cif, zile)
+            
             # Expected keys: mesaje, serial, cui, titlu
             expected_keys = ['mesaje', 'serial', 'cui', 'titlu']
             missing_keys = [key for key in expected_keys if key not in response_data]
             
             # Check if this might be an error response
-            error_indicator_keys = ['error', 'message', 'error_description', 'erori', 'mesaj']
+            error_indicator_keys = ['error', 'message', 'error_description', 'erori', 'mesaj', 'eroare']
             has_error_indicators = any(key in response_data for key in error_indicator_keys)
             
             if missing_keys:
@@ -149,9 +160,9 @@ class ANAFService:
                 response_str = json.dumps(response_data, indent=2, ensure_ascii=False)
                 current_app.logger.warning(f"Full response body (first 1000 chars): {response_str[:1000]}")
                 
-                # Check if it's an error response
-                if has_error_indicators:
-                    error_msg = response_data.get('error') or response_data.get('message') or response_data.get('error_description') or response_data.get('mesaj') or response_data.get('erori')
+                # Check if it's an error response (pagination error already handled above)
+                if has_error_indicators and not is_pagination_error:
+                    error_msg = response_data.get('error') or response_data.get('message') or response_data.get('error_description') or response_data.get('mesaj') or response_data.get('erori') or eroare_msg
                     current_app.logger.error(f"ANAF API returned error response: {error_msg}")
                     raise ValueError(f"ANAF API error: {error_msg or 'Unknown error'}")
                 
@@ -181,6 +192,142 @@ class ANAFService:
             return response_data
         except requests.exceptions.RequestException as e:
             current_app.logger.error(f"Error listing invoices for CIF {cif}: {str(e)}")
+            if hasattr(e, 'response') and e.response is not None:
+                current_app.logger.error(f"Error Response Status: {e.response.status_code}")
+                current_app.logger.error(f"Error Response Body: {e.response.text[:500]}")
+            raise
+    
+    def lista_mesaje_factura_paginated(self, cif, zile=60, pagina_size=500):
+        """
+        List e-Factura message notifications for a specific CIF with pagination support.
+        Automatically fetches all pages and combines results.
+        
+        Per ANAF documentation, when there are more than 500 messages, pagination is required.
+        This method fetches all pages automatically.
+        
+        Args:
+            cif: Company CIF/CUI (string, digits only)
+            zile: Number of days to look back (integer, 1-90, default 60)
+            pagina_size: Number of items per page (default 500, max per ANAF)
+        
+        Returns:
+            Dictionary with structure: {"mesaje": [...], "serial": "", "cui": "", "titlu": ""}
+            with all messages from all pages combined
+        """
+        # Validate parameters
+        if not isinstance(zile, int) or zile < 1 or zile > 90:
+            raise ValueError(f"zile must be an integer between 1 and 90, got {zile}")
+        
+        if not isinstance(cif, str) or not cif.isdigit():
+            raise ValueError(f"cif must be a string containing only digits, got {cif}")
+        
+        url = f"{self.base_url}/prod/FCTEL/rest/listaMesajeFactura"
+        headers = self._get_headers()
+        
+        all_mesaje = []
+        combined_serial = ''
+        combined_cui = ''
+        combined_titlu = ''
+        pagina = 1  # Start from page 1
+        
+        current_app.logger.info(f"=== ANAF API REQUEST: Lista Mesaje Factura (Paginated) ===")
+        current_app.logger.info(f"CIF: {cif}, Zile: {zile}, Page Size: {pagina_size}")
+        
+        try:
+            while True:
+                # Prepare paginated request parameters
+                params = {
+                    'zile': zile,
+                    'cif': cif,
+                    'pagina': pagina,
+                    'dimensiune_pagina': pagina_size
+                }
+                
+                current_app.logger.info(f"Fetching page {pagina} with {pagina_size} items per page...")
+                
+                # Log full request URL for debugging
+                full_url = f"{url}?zile={zile}&cif={cif}&pagina={pagina}&dimensiune_pagina={pagina_size}"
+                current_app.logger.info(f"Paginated request URL: {full_url}")
+                
+                response = self.session.get(
+                    url,
+                    params=params,
+                    headers=headers,
+                    timeout=30
+                )
+                
+                current_app.logger.info(f"Paginated response status: {response.status_code}")
+                
+                response.raise_for_status()
+                response_data = response.json()
+                
+                # Log response structure for debugging
+                if isinstance(response_data, dict):
+                    current_app.logger.info(f"Paginated response keys: {list(response_data.keys())}")
+                
+                # Handle response wrapping
+                if isinstance(response_data, dict):
+                    if 'data' in response_data and isinstance(response_data['data'], dict):
+                        response_data = response_data['data']
+                    elif 'result' in response_data and isinstance(response_data['result'], dict):
+                        response_data = response_data['result']
+                    elif 'response' in response_data and isinstance(response_data['response'], dict):
+                        response_data = response_data['response']
+                
+                # Check for errors
+                if 'eroare' in response_data:
+                    error_msg = response_data['eroare']
+                    # If it's not about pagination, raise it
+                    if 'paginatie' not in error_msg.lower():
+                        current_app.logger.error(f"ANAF API error on page {pagina}: {error_msg}")
+                        raise ValueError(f"ANAF API error: {error_msg}")
+                
+                # Extract messages from current page
+                page_mesaje = response_data.get('mesaje', [])
+                
+                if not page_mesaje:
+                    # No more messages, stop pagination
+                    current_app.logger.info(f"No more messages on page {pagina}, stopping pagination")
+                    break
+                
+                # Combine messages
+                all_mesaje.extend(page_mesaje)
+                
+                # Store metadata from first page (they should be consistent)
+                if pagina == 1:
+                    combined_serial = response_data.get('serial', '')
+                    combined_cui = response_data.get('cui', cif)
+                    combined_titlu = response_data.get('titlu', '')
+                
+                current_app.logger.info(f"Page {pagina}: Found {len(page_mesaje)} messages (total so far: {len(all_mesaje)})")
+                
+                # Check if we've reached the last page
+                # If the page has fewer items than the page size, it's likely the last page
+                if len(page_mesaje) < pagina_size:
+                    current_app.logger.info(f"Last page reached (page {pagina} has fewer items than page size)")
+                    break
+                
+                # Move to next page
+                pagina += 1
+                
+                # Safety limit to prevent infinite loops
+                if pagina > 1000:  # Max 500,000 messages
+                    current_app.logger.warning(f"Reached maximum page limit (1000), stopping pagination")
+                    break
+            
+            current_app.logger.info(f"Pagination complete: Total messages fetched: {len(all_mesaje)} from {pagina} page(s)")
+            current_app.logger.info("=" * 60)
+            
+            # Return combined result in same format as non-paginated version
+            return {
+                'mesaje': all_mesaje,
+                'serial': combined_serial,
+                'cui': combined_cui or cif,
+                'titlu': combined_titlu
+            }
+            
+        except requests.exceptions.RequestException as e:
+            current_app.logger.error(f"Error listing invoices with pagination for CIF {cif}: {str(e)}")
             if hasattr(e, 'response') and e.response is not None:
                 current_app.logger.error(f"Error Response Status: {e.response.status_code}")
                 current_app.logger.error(f"Error Response Body: {e.response.text[:500]}")
