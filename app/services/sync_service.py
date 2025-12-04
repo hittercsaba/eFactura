@@ -21,18 +21,42 @@ def sync_company_invoices(company_id, force=False):
         force: If True, sync even if auto_sync_enabled is False (for manual syncs)
     """
     global app_instance
-    if not app_instance:
-        # Fallback: try to use current_app if available
+    
+    # Try to detect if we're already in an app context (e.g., called from a route)
+    try:
+        # Try to access current_app - if it works without error, we're in an app context
+        app_obj = current_app._get_current_object()
+        # We're already in an app context (e.g., called from a route)
         try:
-            with current_app.app_context():
-                _sync_company_invoices_impl(company_id, force=force)
-        except RuntimeError:
-            # No application context available
-            return
-    else:
-        # Use stored app instance
+            app_obj.logger.info(f"sync_company_invoices called with company_id={company_id}, force={force} - Already in app context")
+        except:
+            pass
+        # Call implementation directly without creating new context
+        _sync_company_invoices_impl(company_id, force=force)
+        return
+    except RuntimeError:
+        # Not in an app context, need to create one
+        pass
+    
+    # Not in an app context, create one
+    # This happens when called from background jobs
+    if app_instance:
+        # Use stored app instance (for scheduled jobs)
         with app_instance.app_context():
+            app_instance.logger.info(f"sync_company_invoices called with company_id={company_id}, force={force} - Using app_instance")
             _sync_company_invoices_impl(company_id, force=force)
+    else:
+        # Last resort: try current_app again (might work in some cases)
+        try:
+            _ = current_app._get_current_object()
+            with current_app.app_context():
+                current_app.logger.info(f"sync_company_invoices called with company_id={company_id}, force={force} - Created new app context")
+                _sync_company_invoices_impl(company_id, force=force)
+        except RuntimeError as e:
+            # No application context available
+            import logging
+            logging.error(f"Cannot sync company {company_id} - no Flask app context available: {str(e)}")
+            return
 
 def _sync_company_invoices_impl(company_id, force=False):
     """

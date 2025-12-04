@@ -296,20 +296,29 @@ def callback():
 @approved_required
 def sync_company(company_id):
     """Manually trigger sync for a company"""
+    # Log immediately when sync button is pressed
+    current_app.logger.info("=" * 60)
+    current_app.logger.info(f"SYNC BUTTON PRESSED - Company ID: {company_id}, User ID: {current_user.id}, User Email: {current_user.email}")
+    current_app.logger.info("=" * 60)
+    
     company = Company.query.filter_by(
         id=company_id,
         user_id=current_user.id
     ).first_or_404()
     
+    current_app.logger.info(f"Company found: {company.name} (CIF: {company.cif})")
+    
     try:
         from app.services.sync_service import sync_company_invoices
-        current_app.logger.info(f"Manual sync triggered for company {company_id} ({company.name}) by user {current_user.id}")
+        current_app.logger.info(f"Calling sync_company_invoices(company_id={company_id}, force=True)...")
         sync_company_invoices(company_id, force=True)  # Force sync even if auto_sync_enabled is False
+        current_app.logger.info(f"Sync function returned successfully for company {company_id}")
         flash(f'Invoice sync completed for {company.name}.', 'success')
     except Exception as e:
-        current_app.logger.error(f"Manual sync error for company {company_id}: {str(e)}", exc_info=True)
+        current_app.logger.error(f"EXCEPTION in sync route for company {company_id}: {str(e)}", exc_info=True)
         flash(f'Error during sync: {str(e)}', 'error')
     
+    current_app.logger.info(f"Redirecting to dashboard after sync for company {company_id}")
     return redirect(url_for('dashboard.index'))
 
 
