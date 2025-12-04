@@ -296,6 +296,12 @@ def callback():
 @approved_required
 def sync_company(company_id):
     """Manually trigger sync for a company"""
+    # Print directly to stdout/stderr - this will always show in logs
+    import sys
+    print("=" * 60, file=sys.stderr)
+    print(f"[ROUTE] SYNC BUTTON PRESSED - Company ID: {company_id}, User ID: {current_user.id}, User Email: {current_user.email}", file=sys.stderr)
+    print("=" * 60, file=sys.stderr)
+    
     # Log immediately when sync button is pressed
     current_app.logger.info("=" * 60)
     current_app.logger.info(f"SYNC BUTTON PRESSED - Company ID: {company_id}, User ID: {current_user.id}, User Email: {current_user.email}")
@@ -309,12 +315,35 @@ def sync_company(company_id):
     current_app.logger.info(f"Company found: {company.name} (CIF: {company.cif})")
     
     try:
+        import sys
+        print(f"[ROUTE] About to import sync_company_invoices", file=sys.stderr)
         from app.services.sync_service import sync_company_invoices
-        current_app.logger.info(f"Calling sync_company_invoices(company_id={company_id}, force=True)...")
-        sync_company_invoices(company_id, force=True)  # Force sync even if auto_sync_enabled is False
-        current_app.logger.info(f"Sync function returned successfully for company {company_id}")
+        print(f"[ROUTE] Successfully imported sync_company_invoices", file=sys.stderr)
+        
+        current_app.logger.info(f"About to call sync_company_invoices(company_id={company_id}, force=True)...")
+        print(f"[ROUTE] About to call sync_company_invoices(company_id={company_id}, force=True)...", file=sys.stderr)
+        
+        # Call sync and capture any exceptions
+        try:
+            print(f"[ROUTE] CALLING sync_company_invoices NOW...", file=sys.stderr)
+            sync_company_invoices(company_id, force=True)  # Force sync even if auto_sync_enabled is False
+            print(f"[ROUTE] sync_company_invoices RETURNED (no exception)", file=sys.stderr)
+            current_app.logger.info(f"Sync function returned (no exception raised) for company {company_id}")
+        except Exception as sync_error:
+            print(f"[ROUTE] EXCEPTION during sync_company_invoices: {str(sync_error)}", file=sys.stderr)
+            import traceback
+            traceback.print_exc(file=sys.stderr)
+            current_app.logger.error(f"EXCEPTION during sync_company_invoices call: {str(sync_error)}", exc_info=True)
+            raise  # Re-raise to be caught by outer exception handler
+        
+        current_app.logger.info(f"Sync completed successfully for company {company_id}")
+        print(f"[ROUTE] Sync completed successfully for company {company_id}", file=sys.stderr)
         flash(f'Invoice sync completed for {company.name}.', 'success')
     except Exception as e:
+        import sys
+        print(f"[ROUTE] EXCEPTION in sync route: {str(e)}", file=sys.stderr)
+        import traceback
+        traceback.print_exc(file=sys.stderr)
         current_app.logger.error(f"EXCEPTION in sync route for company {company_id}: {str(e)}", exc_info=True)
         flash(f'Error during sync: {str(e)}', 'error')
     

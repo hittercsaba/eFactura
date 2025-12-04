@@ -20,6 +20,9 @@ def sync_company_invoices(company_id, force=False):
         company_id: ID of the company to sync
         force: If True, sync even if auto_sync_enabled is False (for manual syncs)
     """
+    import sys
+    print(f"[SYNC] FUNCTION CALLED: sync_company_invoices(company_id={company_id}, force={force})", file=sys.stderr)
+    
     global app_instance
     
     # Try to detect if we're already in an app context (e.g., called from a route)
@@ -28,15 +31,35 @@ def sync_company_invoices(company_id, force=False):
         app_obj = current_app._get_current_object()
         # We're already in an app context (e.g., called from a route)
         try:
-            app_obj.logger.info(f"sync_company_invoices called with company_id={company_id}, force={force} - Already in app context")
-        except:
-            pass
+            app_obj.logger.info(f"[SYNC] ENTRY: sync_company_invoices called with company_id={company_id}, force={force} - Already in app context")
+        except Exception as log_err:
+            # If logging fails, use print as fallback - this ensures we always see something
+            print(f"[SYNC] ENTRY: sync_company_invoices(company_id={company_id}, force={force}) - Already in app context")
+        
         # Call implementation directly without creating new context
-        _sync_company_invoices_impl(company_id, force=force)
+        try:
+            _sync_company_invoices_impl(company_id, force=force)
+            try:
+                app_obj.logger.info(f"[SYNC] EXIT: sync_company_invoices completed successfully for company_id={company_id}")
+            except:
+                print(f"[SYNC] EXIT: sync_company_invoices completed successfully for company_id={company_id}")
+        except Exception as impl_error:
+            # Log and re-raise so route can see it
+            try:
+                app_obj.logger.error(f"[SYNC] ERROR in implementation: {str(impl_error)}", exc_info=True)
+            except:
+                print(f"[SYNC] ERROR in implementation: {str(impl_error)}")
+                import traceback
+                traceback.print_exc()
+            raise  # Re-raise so route can catch it
         return
-    except RuntimeError:
+    except RuntimeError as re:
         # Not in an app context, need to create one
-        pass
+        try:
+            import logging
+            logging.warning(f"[SYNC] Not in app context (RuntimeError: {str(re)}), will create one")
+        except:
+            print(f"[SYNC] Not in app context (RuntimeError: {str(re)}), will create one")
     
     # Not in an app context, create one
     # This happens when called from background jobs
@@ -66,9 +89,16 @@ def _sync_company_invoices_impl(company_id, force=False):
         company_id: ID of the company to sync
         force: If True, sync even if auto_sync_enabled is False (for manual syncs)
     """
+    # Use print as backup to ensure we always see this
+    print(f"[SYNC_IMPL] START: _sync_company_invoices_impl(company_id={company_id}, force={force})")
+    
     try:
-        current_app.logger.info(f"=== STARTING SYNC FOR COMPANY {company_id} ===")
-        current_app.logger.info(f"Force mode: {force}")
+        try:
+            current_app.logger.info(f"=== STARTING SYNC FOR COMPANY {company_id} ===")
+            current_app.logger.info(f"Force mode: {force}")
+        except:
+            print(f"[SYNC_IMPL] === STARTING SYNC FOR COMPANY {company_id} ===")
+            print(f"[SYNC_IMPL] Force mode: {force}")
         
         company = Company.query.get(company_id)
         if not company:
