@@ -20,6 +20,9 @@ class Config:
     SESSION_COOKIE_SECURE = os.environ.get('FLASK_ENV') == 'production'
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = 'Lax'
+    
+    # Invoice storage configuration
+    INVOICE_STORAGE_PATH = os.environ.get('INVOICE_STORAGE_PATH') or '/app/data/invoices'
 
 class DevelopmentConfig(Config):
     """Development configuration"""

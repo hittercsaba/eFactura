@@ -356,15 +356,15 @@ def download_invoice(invoice_id):
             'code': 'INVOICE_NOT_FOUND'
         }), 404
     
+    safe_filename = f"invoice_{invoice.anaf_id}.zip".replace('/', '_').replace('\\', '_')
+    
+    # Tier 1: Try to re-download from ANAF API (fresh data)
     try:
-        # Try to re-download from ANAF API (fresh data)
         from app.services.anaf_service import ANAFService
         anaf_service = ANAFService(api_key_obj.company.user_id)
         zip_content = anaf_service.descarcare_factura(invoice.anaf_id)
         
         # Return ZIP file
-        # Sanitize filename to prevent path traversal
-        safe_filename = f"invoice_{invoice.anaf_id}.zip".replace('/', '_').replace('\\', '_')
         from flask import Response
         return Response(
             zip_content,
@@ -375,7 +375,33 @@ def download_invoice(invoice_id):
             }
         )
     except Exception as e:
-        # Fallback: create ZIP from stored XML
+        from flask import current_app
+        current_app.logger.debug(f"ANAF API download failed for invoice {invoice.anaf_id}: {str(e)}")
+        pass
+    
+    # Tier 2: Try to serve from saved ZIP file on disk
+    if invoice.zip_file_path:
+        try:
+            from app.services.storage_service import InvoiceStorageService
+            zip_content = InvoiceStorageService.read_zip_file(invoice.zip_file_path)
+            if zip_content:
+                from flask import current_app, Response
+                current_app.logger.debug(f"Serving invoice {invoice.anaf_id} from saved ZIP file")
+                return Response(
+                    zip_content,
+                    mimetype='application/zip',
+                    headers={
+                        'Content-Disposition': f'attachment; filename={safe_filename}',
+                        'X-Content-Type-Options': 'nosniff'
+                    }
+                )
+        except Exception as e:
+            from flask import current_app
+            current_app.logger.warning(f"Error reading saved ZIP file for invoice {invoice.anaf_id}: {str(e)}")
+            pass
+    
+    # Tier 3: Final fallback - create ZIP from stored XML
+    if invoice.xml_content:
         import zipfile
         import io
         zip_buffer = io.BytesIO()
@@ -383,10 +409,9 @@ def download_invoice(invoice_id):
             zip_file.writestr(f'invoice_{invoice.anaf_id}.xml', invoice.xml_content)
         
         zip_buffer.seek(0)
+        from flask import current_app, Response
+        current_app.logger.debug(f"Creating ZIP from stored XML for invoice {invoice.anaf_id}")
         
-        # Sanitize filename to prevent path traversal
-        safe_filename = f"invoice_{invoice.anaf_id}.zip".replace('/', '_').replace('\\', '_')
-        from flask import Response
         return Response(
             zip_buffer.read(),
             mimetype='application/zip',
@@ -395,3 +420,10 @@ def download_invoice(invoice_id):
                 'X-Content-Type-Options': 'nosniff'
             }
         )
+    
+    # If all else fails, return error
+    return jsonify({
+        'error': 'Not Available',
+        'message': 'Invoice file not available',
+        'code': 'INVOICE_FILE_NOT_AVAILABLE'
+    }), 404

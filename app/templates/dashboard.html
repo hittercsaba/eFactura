@@ -375,8 +375,8 @@
                                 <td>{{ invoice.receiver_name or '-' }}</td>
                                 <td>{{ invoice.invoice_date.strftime('%Y-%m-%d') if invoice.invoice_date else '-' }}</td>
                                 <td>
-                                    {% if invoice.total_amount %}
-                                        {{ "%.2f"|format(invoice.total_amount) }} RON
+                                    {% if invoice.total_amount is not none %}
+                                        {{ "%.2f"|format(invoice.total_amount) }} {{ invoice.currency or 'RON' }}
                                     {% else %}
                                         -
                                     {% endif %}
