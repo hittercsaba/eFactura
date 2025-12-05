@@ -208,6 +208,16 @@ class ANAFService:
                         # This is a normal end-of-pagination condition, not a real error
                         current_app.logger.info(f"Reached end of pagination: {error_msg}")
                         break
+                    elif 'nu exista mesaje' in error_msg.lower() or 'no messages' in error_msg.lower():
+                        # No messages in the selected interval - this is normal, not an error
+                        current_app.logger.info(f"No messages found in selected interval: {error_msg}")
+                        # Return empty result structure
+                        return {
+                            'mesaje': [],
+                            'serial': '',
+                            'cui': cif,
+                            'titlu': response_data.get('titlu', '')
+                        }
                     else:
                         # This is a real error, raise it
                         current_app.logger.error(f"ANAF API error on page {pagina}: {error_msg}")
