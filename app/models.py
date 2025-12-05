@@ -147,8 +147,10 @@ class Invoice(db.Model):
     receiver_name = db.Column(db.String(200), nullable=True)  # Extracted from XML
     invoice_date = db.Column(db.Date, nullable=True)
     total_amount = db.Column(db.Numeric(15, 2), nullable=True)
+    currency = db.Column(db.String(3), nullable=True)  # ISO currency code (EUR, RON, etc.)
     xml_content = db.Column(db.Text, nullable=False)
     json_content = db.Column(db.JSON, nullable=True)
+    zip_file_path = db.Column(db.String(500), nullable=True)  # Relative path to saved ZIP file
     synced_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     
     # Unique constraint: same ANAF ID can't be synced twice for same company

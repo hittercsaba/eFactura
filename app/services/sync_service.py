@@ -9,6 +9,7 @@ import re
 from app.models import db, Company, Invoice, AnafToken
 from app.services.anaf_service import ANAFService
 from app.services.invoice_service import InvoiceService
+from app.services.storage_service import InvoiceStorageService
 
 scheduler = None
 app_instance = None  # Store app instance for scheduler context
@@ -414,15 +415,15 @@ def _sync_company_invoices_impl(company_id, force=False):
                             
                             if file_content.startswith(b'PK\x03\x04'):
                                 with zipfile.ZipFile(io.BytesIO(file_content)) as zip_file:
-                                    # Find invoice XML file (exclude signature files)
-                                    all_xml_files = [f for f in zip_file.namelist() if f.endswith('.xml')]
-                                    invoice_xml_files = [f for f in all_xml_files if not f.startswith('semnatura_')]
+                                    # Extract unsigned Invoice XML (not semnatura_*.xml)
+                                    xml_content, xml_filename = InvoiceService.extract_unsigned_xml_from_zip(zip_file)
                                     
-                                    if invoice_xml_files:
-                                        xml_content = zip_file.read(invoice_xml_files[0]).decode('utf-8')
-                                    elif all_xml_files:
-                                        xml_content = zip_file.read(all_xml_files[0]).decode('utf-8')
+                                    if xml_content and xml_filename:
+                                        current_app.logger.debug(f"Extracted unsigned XML from {xml_filename} for invoice {invoice_id}")
+                                    elif xml_content:
+                                        current_app.logger.warning(f"Extracted XML without filename for invoice {invoice_id}")
                                     else:
+                                        current_app.logger.warning(f"No unsigned XML file found in ZIP for invoice {invoice_id}")
                                         xml_content = None
                             elif file_content.startswith(b'<?xml') or file_content.startswith(b'<'):
                                 xml_content = file_content.decode('utf-8')
@@ -431,15 +432,35 @@ def _sync_company_invoices_impl(company_id, force=False):
                             
                             if xml_content:
                                 parsed_data = invoice_service.parse_xml_to_json(xml_content)
-                                supplier_name, supplier_cif, invoice_date_from_xml, total_amount, issuer_name, receiver_name = \
+                                supplier_name, supplier_cif, invoice_date_from_xml, total_amount, currency, \
+                                issuer_name, receiver_name, issuer_vat_id, receiver_vat_id = \
                                     invoice_service.extract_invoice_fields(parsed_data)
                                 
-                                # Update issuer and receiver names if missing
-                                if not existing.issuer_name and issuer_name:
+                                # Update issuer and receiver names if missing or "-"
+                                # Use helper function to treat "-" as missing
+                                if InvoiceService._is_empty_or_dash(existing.issuer_name) and issuer_name:
                                     existing.issuer_name = issuer_name
                                     needs_update = True
-                                if not existing.receiver_name and receiver_name:
+                                if InvoiceService._is_empty_or_dash(existing.receiver_name) and receiver_name:
                                     existing.receiver_name = receiver_name
+                                    needs_update = True
+                                
+                                # Update VAT IDs if missing or "-"
+                                if InvoiceService._is_empty_or_dash(existing.cif_emitent) and issuer_vat_id:
+                                    existing.cif_emitent = issuer_vat_id
+                                    needs_update = True
+                                if InvoiceService._is_empty_or_dash(existing.cif_beneficiar) and receiver_vat_id:
+                                    existing.cif_beneficiar = receiver_vat_id
+                                    needs_update = True
+                                
+                                # Update total amount if missing
+                                if existing.total_amount is None and total_amount is not None:
+                                    existing.total_amount = total_amount
+                                    needs_update = True
+                                
+                                # Update currency if missing or "-"
+                                if InvoiceService._is_empty_or_dash(existing.currency) and currency:
+                                    existing.currency = currency
                                     needs_update = True
                                 
                                 # Update invoice date - prefer data_creare from response, fallback to XML
@@ -450,6 +471,20 @@ def _sync_company_invoices_impl(company_id, force=False):
                                 elif invoice_date_from_xml and not existing.invoice_date:
                                     existing.invoice_date = invoice_date_from_xml
                                     needs_update = True
+                                
+                                # Try to save ZIP file if we have it and it's not saved yet
+                                if not existing.zip_file_path and file_content:
+                                    try:
+                                        zip_path = InvoiceStorageService.save_zip_file(
+                                            company_id=existing.company_id,
+                                            invoice_id=existing.anaf_id,
+                                            zip_content=file_content,
+                                            invoice_date=existing.invoice_date or invoice_date_from_response
+                                        )
+                                        existing.zip_file_path = zip_path
+                                        needs_update = True
+                                    except Exception as zip_error:
+                                        current_app.logger.warning(f"Error saving ZIP file for invoice {invoice_id}: {str(zip_error)}")
                         except Exception as e:
                             current_app.logger.warning(f"Error updating invoice {invoice_id} with XML data: {str(e)}")
                         
@@ -464,29 +499,26 @@ def _sync_company_invoices_impl(company_id, force=False):
                     # Handle binary content - could be ZIP or XML
                     # Try to detect if it's ZIP (starts with PK\x03\x04) or XML
                     if file_content.startswith(b'PK\x03\x04'):
-                        # It's a ZIP file - extract XML from it
+                        # It's a ZIP file - extract unsigned Invoice XML from it
+                        # ZIP contains: {id}.xml (unsigned) and semnatura_{id}.xml (signed - skip)
                         try:
                             with zipfile.ZipFile(io.BytesIO(file_content)) as zip_file:
-                                # Find invoice XML file in ZIP (exclude signature files)
-                                # Signature files are named like "semnatura_*.xml"
-                                # Invoice files are named like "{id_solicitare}.xml"
-                                all_xml_files = [f for f in zip_file.namelist() if f.endswith('.xml')]
-                                # Filter out signature files
-                                invoice_xml_files = [f for f in all_xml_files if not f.startswith('semnatura_')]
+                                # Extract unsigned Invoice XML (not semnatura_*.xml)
+                                xml_content, xml_filename = InvoiceService.extract_unsigned_xml_from_zip(zip_file)
                                 
-                                if invoice_xml_files:
-                                    # Use the first non-signature XML file (should be the invoice)
-                                    xml_content = zip_file.read(invoice_xml_files[0]).decode('utf-8')
-                                    current_app.logger.debug(f"Extracted invoice XML from {invoice_xml_files[0]} (ZIP contained {len(all_xml_files)} XML files)")
-                                elif all_xml_files:
-                                    # Fallback: use first XML file if no non-signature files found
-                                    xml_content = zip_file.read(all_xml_files[0]).decode('utf-8')
-                                    current_app.logger.warning(f"Using signature XML file {all_xml_files[0]} as fallback for invoice {invoice_id}")
-                                else:
-                                    current_app.logger.warning(f"No XML file found in ZIP for invoice {invoice_id}")
+                                if not xml_content:
+                                    current_app.logger.error(f"No unsigned XML file found in ZIP for invoice {invoice_id}")
                                     continue
+                                
+                                current_app.logger.debug(f"Extracted unsigned XML from {xml_filename} for invoice {invoice_id}")
+                                
+                                # Verify it's unsigned Invoice XML (not signed)
+                                if xml_content.strip().startswith('<Signature') or '<Signature' in xml_content[:200]:
+                                    current_app.logger.error(f"ERROR: Extracted signed XML instead of unsigned for invoice {invoice_id}")
+                                    continue
+                                
                         except Exception as e:
-                            current_app.logger.error(f"Error extracting ZIP for invoice {invoice_id}: {str(e)}")
+                            current_app.logger.error(f"Error extracting ZIP for invoice {invoice_id}: {str(e)}", exc_info=True)
                             continue
                     elif file_content.startswith(b'<?xml') or file_content.startswith(b'<'):
                         # It's XML directly
@@ -501,13 +533,33 @@ def _sync_company_invoices_impl(company_id, force=False):
                 
                 # Parse XML to JSON to extract issuer and receiver names
                 parsed_data = invoice_service.parse_xml_to_json(xml_content)
-                supplier_name, supplier_cif, invoice_date_from_xml, total_amount, issuer_name, receiver_name = \
+                supplier_name, supplier_cif, invoice_date_from_xml, total_amount, currency, \
+                issuer_name, receiver_name, issuer_vat_id, receiver_vat_id = \
                     invoice_service.extract_invoice_fields(parsed_data)
+                
+                # Use VAT IDs from XML if available, otherwise from detalii field
+                final_cif_emitent = issuer_vat_id or cif_emitent
+                final_cif_beneficiar = receiver_vat_id or cif_beneficiar
                 
                 # Use invoice_date from response (data_creare) if available, otherwise from XML
                 final_invoice_date = invoice_date_from_response or invoice_date_from_xml
                 
-                current_app.logger.info(f"Extracted from XML - Issuer: {issuer_name}, Receiver: {receiver_name}, Date: {final_invoice_date}")
+                current_app.logger.info(f"Extracted from XML - Issuer: {issuer_name}, Receiver: {receiver_name}, Date: {final_invoice_date}, Amount: {total_amount}, Currency: {currency}")
+                
+                # Save ZIP file to disk
+                zip_file_path = None
+                try:
+                    if file_content.startswith(b'PK\x03\x04'):
+                        # It's a ZIP file - save it
+                        zip_file_path = InvoiceStorageService.save_zip_file(
+                            company_id=company.id,
+                            invoice_id=str(invoice_id),
+                            zip_content=file_content,
+                            invoice_date=final_invoice_date
+                        )
+                        current_app.logger.debug(f"Saved ZIP file for invoice {invoice_id} to {zip_file_path}")
+                except Exception as zip_error:
+                    current_app.logger.warning(f"Error saving ZIP file for invoice {invoice_id}: {str(zip_error)}")
                 
                 # Create invoice record
                 invoice = Invoice(
@@ -516,14 +568,16 @@ def _sync_company_invoices_impl(company_id, force=False):
                     invoice_type=invoice_type,  # "FACTURA PRIMITA" or "FACTURA TRIMISA"
                     supplier_name=supplier_name,
                     supplier_cif=supplier_cif,
-                    cif_emitent=cif_emitent,  # Extracted from detalii
-                    cif_beneficiar=cif_beneficiar,  # Extracted from detalii
+                    cif_emitent=final_cif_emitent,  # From XML or detalii
+                    cif_beneficiar=final_cif_beneficiar,  # From XML or detalii
                     issuer_name=issuer_name,  # Extracted from XML
                     receiver_name=receiver_name,  # Extracted from XML
                     invoice_date=final_invoice_date,  # From data_creare or XML
                     total_amount=total_amount,
+                    currency=currency,  # Extracted from XML
                     xml_content=xml_content,
                     json_content=parsed_data,
+                    zip_file_path=zip_file_path,  # Path to saved ZIP file
                     synced_at=datetime.now(timezone.utc)
                 )
                 
@@ -594,6 +648,94 @@ def _sync_all_companies_impl():
         
         sync_company_invoices(company.id)
 
+def reparse_all_invoices():
+    """
+    Reparse all invoices with missing critical fields
+    Runs as a background job to fill in missing data
+    """
+    global app_instance
+    
+    if not app_instance:
+        try:
+            with current_app.app_context():
+                _reparse_all_invoices_impl()
+        except RuntimeError:
+            return
+    else:
+        with app_instance.app_context():
+            _reparse_all_invoices_impl()
+
+def _reparse_all_invoices_impl():
+    """Internal implementation of reparse_all_invoices"""
+    try:
+        current_app.logger.info("=== STARTING INVOICE REPARSE JOB ===")
+        
+        # Find invoices missing critical fields
+        incomplete_invoices = Invoice.query.filter(
+            db.or_(
+                Invoice.issuer_name.is_(None),
+                Invoice.receiver_name.is_(None),
+                Invoice.cif_emitent.is_(None),
+                Invoice.cif_beneficiar.is_(None),
+                Invoice.total_amount.is_(None),
+                Invoice.currency.is_(None)
+            )
+        ).all()
+        
+        total_count = len(incomplete_invoices)
+        current_app.logger.info(f"Found {total_count} invoices with missing fields to reparse")
+        
+        updated_count = 0
+        error_count = 0
+        
+        # Process in batches to avoid memory issues
+        batch_size = 50
+        for i in range(0, total_count, batch_size):
+            batch = incomplete_invoices[i:i + batch_size]
+            
+            for invoice in batch:
+                try:
+                    # Check if invoice still needs reparsing (might have been updated by another process)
+                    if not InvoiceService.is_invoice_incomplete(invoice):
+                        continue
+                    
+                    # Reparse invoice XML
+                    updated = InvoiceService.reparse_invoice(invoice)
+                    
+                    if updated:
+                        updated_count += 1
+                        db.session.commit()
+                        current_app.logger.debug(f"Updated invoice {invoice.id} (ANAF ID: {invoice.anaf_id})")
+                    else:
+                        # Refresh from database to check current state
+                        db.session.refresh(invoice)
+                        if InvoiceService.is_invoice_incomplete(invoice):
+                            current_app.logger.warning(f"Could not update invoice {invoice.id} (ANAF ID: {invoice.anaf_id}) - XML may be incomplete or corrupted")
+                        error_count += 1
+                        
+                except Exception as e:
+                    error_count += 1
+                    current_app.logger.error(f"Error reparsing invoice {invoice.id}: {str(e)}", exc_info=True)
+                    db.session.rollback()
+                    continue
+            
+            # Commit batch
+            try:
+                db.session.commit()
+            except Exception as commit_error:
+                current_app.logger.error(f"Error committing reparse batch: {str(commit_error)}")
+                db.session.rollback()
+        
+        current_app.logger.info(f"=== REPARSE JOB COMPLETE ===")
+        current_app.logger.info(f"Total processed: {total_count}, Updated: {updated_count}, Errors: {error_count}")
+        current_app.logger.info("=" * 60)
+        
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"=== REPARSE JOB FAILED ===")
+        current_app.logger.error(f"Error in reparse job: {str(e)}", exc_info=True)
+        current_app.logger.error("=" * 60)
+
 def init_scheduler(app):
     """Initialize APScheduler for background sync jobs"""
     global scheduler, app_instance
@@ -615,8 +757,18 @@ def init_scheduler(app):
         replace_existing=True
     )
     
+    # Schedule reparse job to run once per day at 2 AM
+    from apscheduler.triggers.cron import CronTrigger
+    scheduler.add_job(
+        func=reparse_all_invoices,
+        trigger=CronTrigger(hour=2, minute=0),
+        id='reparse_all_invoices',
+        name='Reparse invoices with missing fields',
+        replace_existing=True
+    )
+    
     scheduler.start()
-    app.logger.info("Background scheduler started")
+    app.logger.info("Background scheduler started with sync and reparse jobs")
 
 def schedule_sync_job(company_id, force=False):
     """

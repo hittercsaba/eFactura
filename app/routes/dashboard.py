@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, session, redirect, url_for, request, flash, send_file, Response
+from flask import Blueprint, render_template, session, redirect, url_for, request, flash, send_file, Response, current_app
 from flask_login import login_required, current_user
 from app.models import Company, Invoice, User, ApiKey, db
 from app.utils.decorators import approved_required
@@ -206,13 +206,12 @@ def download_invoice(invoice_id):
         flash('Access denied.', 'error')
         return redirect(url_for('dashboard.index'))
     
+    safe_filename = f"invoice_{invoice.anaf_id}.zip".replace('/', '_').replace('\\', '_')
+    
+    # Tier 1: Try to re-download from ANAF API (fresh data)
     try:
-        # Try to re-download from ANAF API (fresh data)
         anaf_service = ANAFService(current_user.id)
         zip_content = anaf_service.descarcare_factura(invoice.anaf_id)
-        
-        # Sanitize filename to prevent path traversal
-        safe_filename = f"invoice_{invoice.anaf_id}.zip".replace('/', '_').replace('\\', '_')
         
         # Return ZIP file
         return Response(
@@ -224,15 +223,37 @@ def download_invoice(invoice_id):
             }
         )
     except Exception as e:
-        # Fallback: create ZIP from stored XML
+        current_app.logger.debug(f"ANAF API download failed for invoice {invoice.anaf_id}: {str(e)}")
+        pass
+    
+    # Tier 2: Try to serve from saved ZIP file on disk
+    if invoice.zip_file_path:
+        try:
+            from app.services.storage_service import InvoiceStorageService
+            zip_content = InvoiceStorageService.read_zip_file(invoice.zip_file_path)
+            if zip_content:
+                current_app.logger.debug(f"Serving invoice {invoice.anaf_id} from saved ZIP file")
+                return Response(
+                    zip_content,
+                    mimetype='application/zip',
+                    headers={
+                        'Content-Disposition': f'attachment; filename={safe_filename}',
+                        'X-Content-Type-Options': 'nosniff'
+                    }
+                )
+        except Exception as e:
+            current_app.logger.warning(f"Error reading saved ZIP file for invoice {invoice.anaf_id}: {str(e)}")
+            pass
+    
+    # Tier 3: Final fallback - create ZIP from stored XML
+    if invoice.xml_content:
         zip_buffer = io.BytesIO()
         with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
             zip_file.writestr(f'invoice_{invoice.anaf_id}.xml', invoice.xml_content)
         
         zip_buffer.seek(0)
+        current_app.logger.debug(f"Creating ZIP from stored XML for invoice {invoice.anaf_id}")
         
-        # Sanitize filename to prevent path traversal
-        safe_filename = f"invoice_{invoice.anaf_id}.zip".replace('/', '_').replace('\\', '_')
         return Response(
             zip_buffer.read(),
             mimetype='application/zip',
@@ -241,4 +262,8 @@ def download_invoice(invoice_id):
                 'X-Content-Type-Options': 'nosniff'
             }
         )
+    
+    # If all else fails, return error
+    flash('Invoice file not available.', 'error')
+    return redirect(url_for('dashboard.index'))
 
