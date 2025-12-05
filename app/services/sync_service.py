@@ -13,6 +13,52 @@ from app.services.invoice_service import InvoiceService
 scheduler = None
 app_instance = None  # Store app instance for scheduler context
 
+def _calculate_sync_days(company_id):
+    """
+    Calculate the number of days to sync based on the last sync date.
+    
+    - First sync (no invoices): Returns 60 days
+    - Subsequent syncs: Returns days from last sync to now (min 1, max 60)
+    
+    Args:
+        company_id: ID of the company to check
+    
+    Returns:
+        Number of days to sync (1-60)
+    """
+    # Check if this is the first sync (no invoices exist)
+    invoice_count = Invoice.query.filter_by(company_id=company_id).count()
+    
+    if invoice_count == 0:
+        # First sync - fetch last 60 days
+        return 60
+    
+    # Find the most recent synced invoice
+    last_invoice = Invoice.query.filter_by(company_id=company_id)\
+        .order_by(Invoice.synced_at.desc())\
+        .first()
+    
+    if not last_invoice or not last_invoice.synced_at:
+        # No synced_at date found - treat as first sync
+        return 60
+    
+    # Get last sync date (ensure timezone-aware)
+    last_sync_date = last_invoice.synced_at
+    if last_sync_date.tzinfo is None:
+        last_sync_date = last_sync_date.replace(tzinfo=timezone.utc)
+    
+    # Calculate days between last sync and now
+    now = datetime.now(timezone.utc)
+    days_diff = (now - last_sync_date).days
+    
+    # Add 1 to include today, ensure minimum of 1 day
+    sync_days = max(1, days_diff + 1)
+    
+    # Cap at 60 days maximum (ANAF API limit and reasonable initial sync window)
+    sync_days = min(60, sync_days)
+    
+    return sync_days
+
 def sync_company_invoices(company_id, force=False):
     """
     Sync invoices for a specific company
@@ -179,20 +225,29 @@ def _sync_company_invoices_impl(company_id, force=False):
         anaf_service = ANAFService(company.user_id)
         invoice_service = InvoiceService()
         
-        print(f"[SYNC_IMPL] Step 10: Services initialized, fetching invoice list for CIF {company.cif}", file=sys.stderr)
+        print(f"[SYNC_IMPL] Step 10: Services initialized, calculating sync days for CIF {company.cif}", file=sys.stderr)
         sys.stderr.flush()
         
-        current_app.logger.info(f"Fetching invoice list for CIF {company.cif} (zile=60)...")
+        # Calculate number of days to sync based on last sync date
+        sync_days = _calculate_sync_days(company_id)
         
-        # Get invoice list (using 60 days - using paginated endpoint which supports 1-90 days)
+        # Determine sync type for logging
+        invoice_count = Invoice.query.filter_by(company_id=company_id).count()
+        sync_type = "first sync" if invoice_count == 0 else "incremental sync"
+        
+        current_app.logger.info(f"Sync type: {sync_type}, Fetching invoice list for CIF {company.cif} (zile={sync_days})...")
+        print(f"[SYNC_IMPL] Sync type: {sync_type}, sync_days={sync_days}", file=sys.stderr)
+        sys.stderr.flush()
+        
+        # Get invoice list using calculated days
         # The paginated endpoint (listaMesajePaginatieFactura) uses startTime/endTime timestamps
         try:
-            print(f"[SYNC_IMPL] Step 11: About to call lista_mesaje_factura(cif={company.cif}, zile=60)", file=sys.stderr)
+            print(f"[SYNC_IMPL] Step 11: About to call lista_mesaje_factura(cif={company.cif}, zile={sync_days})", file=sys.stderr)
             sys.stderr.flush()
-            invoice_list = anaf_service.lista_mesaje_factura(company.cif, zile=60)
+            invoice_list = anaf_service.lista_mesaje_factura(company.cif, zile=sync_days)
             print(f"[SYNC_IMPL] Step 12: lista_mesaje_factura returned successfully", file=sys.stderr)
             sys.stderr.flush()
-            current_app.logger.info(f"Successfully fetched invoice list from ANAF API")
+            current_app.logger.info(f"Successfully fetched invoice list from ANAF API ({sync_type}, {sync_days} days)")
         except Exception as e:
             print(f"[SYNC_IMPL] EXCEPTION in lista_mesaje_factura: {type(e).__name__}: {str(e)}", file=sys.stderr)
             import traceback
@@ -491,6 +546,7 @@ def _sync_company_invoices_impl(company_id, force=False):
             db.session.rollback()
             raise
         current_app.logger.info(f"=== SYNC COMPLETE FOR COMPANY {company_id} ===")
+        current_app.logger.info(f"Sync type: {sync_type}, Days synced: {sync_days}")
         current_app.logger.info(f"Successfully synced {synced_count} new invoices for company {company_id} ({company.name})")
         current_app.logger.info("=" * 60)
         
