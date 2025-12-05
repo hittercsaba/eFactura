@@ -15,6 +15,213 @@
     {% endif %}
 </div>
 
+<!-- Statistics Cards -->
+{% if current_user.is_admin %}
+    <!-- Admin Statistics -->
+    <div class="row mb-2">
+        <div class="col-md-3 mb-2">
+            <div class="card h-100">
+                <div class="card-body py-2 px-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <small class="text-muted d-block mb-1">Active Users</small>
+                            <h5 class="mb-0">{{ stats.active_users }}</h5>
+                        </div>
+                        <div class="text-primary" style="font-size: 1.5rem;">
+                            <i class="bi bi-people-fill"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-2">
+            <div class="card h-100">
+                <div class="card-body py-2 px-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <small class="text-muted d-block mb-1">Inactive Users</small>
+                            <h5 class="mb-0">{{ stats.inactive_users }}</h5>
+                        </div>
+                        <div class="text-secondary" style="font-size: 1.5rem;">
+                            <i class="bi bi-person-x-fill"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-2">
+            <div class="card h-100">
+                <div class="card-body py-2 px-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <small class="text-muted d-block mb-1">Total Companies</small>
+                            <h5 class="mb-0">{{ stats.total_companies }}</h5>
+                        </div>
+                        <div class="text-info" style="font-size: 1.5rem;">
+                            <i class="bi bi-building"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-2">
+            <div class="card h-100">
+                <div class="card-body py-2 px-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <small class="text-muted d-block mb-1">Total Invoices</small>
+                            <h5 class="mb-0">{{ stats.total_invoices }}</h5>
+                        </div>
+                        <div class="text-success" style="font-size: 1.5rem;">
+                            <i class="bi bi-file-earmark-text-fill"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="row mb-2">
+        <div class="col-md-3 mb-2">
+            <div class="card h-100">
+                <div class="card-body py-2 px-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <small class="text-muted d-block mb-1">Last Sync</small>
+                            <small class="mb-0 d-block">
+                                {% if stats.last_sync_datetime %}
+                                    {{ stats.last_sync_datetime.strftime('%Y-%m-%d %H:%M') }}
+                                {% else %}
+                                    <span class="text-muted">Never</span>
+                                {% endif %}
+                            </small>
+                        </div>
+                        <div class="text-warning" style="font-size: 1.5rem;">
+                            <i class="bi bi-clock-history"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-2">
+            <div class="card h-100">
+                <div class="card-body py-2 px-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <small class="text-muted d-block mb-1">Invoices Today</small>
+                            <h5 class="mb-0">{{ stats.invoices_synced_today }}</h5>
+                        </div>
+                        <div class="text-success" style="font-size: 1.5rem;">
+                            <i class="bi bi-calendar-day"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-2">
+            <div class="card h-100">
+                <div class="card-body py-2 px-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <small class="text-muted d-block mb-1">Total API Keys</small>
+                            <h5 class="mb-0">{{ stats.total_api_keys }}</h5>
+                        </div>
+                        <div class="text-primary" style="font-size: 1.5rem;">
+                            <i class="bi bi-key-fill"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-2">
+            <div class="card h-100">
+                <div class="card-body py-2 px-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <small class="text-muted d-block mb-1">API Keys Used</small>
+                            <h5 class="mb-0">{{ stats.api_keys_used }}</h5>
+                        </div>
+                        <div class="text-info" style="font-size: 1.5rem;">
+                            <i class="bi bi-key"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="row mb-2">
+        <div class="col-md-3 mb-2">
+            <div class="card h-100">
+                <div class="card-body py-2 px-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <small class="text-muted d-block mb-1">API Keys Used Today</small>
+                            <h5 class="mb-0">{{ stats.api_keys_used_today }}</h5>
+                        </div>
+                        <div class="text-success" style="font-size: 1.5rem;">
+                            <i class="bi bi-calendar-check"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+{% else %}
+    <!-- Normal User Statistics -->
+    <div class="row mb-2">
+        <div class="col-md-4 mb-2">
+            <div class="card h-100">
+                <div class="card-body py-2 px-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <small class="text-muted d-block mb-1">Synced Invoices</small>
+                            <h5 class="mb-0">{{ stats.total_invoices }}</h5>
+                        </div>
+                        <div class="text-success" style="font-size: 1.5rem;">
+                            <i class="bi bi-file-earmark-text-fill"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4 mb-2">
+            <div class="card h-100">
+                <div class="card-body py-2 px-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <small class="text-muted d-block mb-1">Last Sync</small>
+                            <small class="mb-0 d-block">
+                                {% if stats.last_sync_datetime %}
+                                    {{ stats.last_sync_datetime.strftime('%Y-%m-%d %H:%M') }}
+                                {% else %}
+                                    <span class="text-muted">Never</span>
+                                {% endif %}
+                            </small>
+                        </div>
+                        <div class="text-warning" style="font-size: 1.5rem;">
+                            <i class="bi bi-clock-history"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4 mb-2">
+            <div class="card h-100">
+                <div class="card-body py-2 px-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <small class="text-muted d-block mb-1">Invoices Synced Today</small>
+                            <h5 class="mb-0">{{ stats.invoices_synced_today }}</h5>
+                        </div>
+                        <div class="text-info" style="font-size: 1.5rem;">
+                            <i class="bi bi-calendar-day"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endif %}
+
 {% if not companies %}
     <div class="card">
         <div class="card-body text-center py-5">

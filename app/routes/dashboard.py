@@ -1,9 +1,10 @@
 from flask import Blueprint, render_template, session, redirect, url_for, request, flash, send_file, Response
 from flask_login import login_required, current_user
-from app.models import Company, Invoice, db
+from app.models import Company, Invoice, User, ApiKey, db
 from app.utils.decorators import approved_required
 from app.services.anaf_service import ANAFService
-from sqlalchemy import desc, asc
+from sqlalchemy import desc, asc, func
+from datetime import datetime, timezone
 import zipfile
 import io
 
@@ -14,6 +15,62 @@ dashboard_bp = Blueprint('dashboard', __name__)
 @approved_required
 def index():
     """Dashboard with invoice listing"""
+    # Calculate statistics
+    stats = {}
+    today = datetime.now(timezone.utc).date()
+    
+    if current_user.is_admin:
+        # Admin statistics - system-wide
+        stats['active_users'] = User.query.filter_by(is_approved=True).count()
+        stats['inactive_users'] = User.query.filter_by(is_approved=False).count()
+        stats['total_companies'] = Company.query.count()
+        stats['total_invoices'] = Invoice.query.count()
+        
+        # Last sync datetime (max synced_at across all invoices)
+        last_sync = db.session.query(func.max(Invoice.synced_at)).scalar()
+        stats['last_sync_datetime'] = last_sync
+        
+        # Invoices synced today
+        today_start = datetime.combine(today, datetime.min.time()).replace(tzinfo=timezone.utc)
+        today_end = datetime.combine(today, datetime.max.time()).replace(tzinfo=timezone.utc)
+        stats['invoices_synced_today'] = Invoice.query.filter(
+            Invoice.synced_at >= today_start,
+            Invoice.synced_at <= today_end
+        ).count()
+        
+        # API key statistics
+        stats['total_api_keys'] = ApiKey.query.count()
+        stats['api_keys_used'] = ApiKey.query.filter(ApiKey.last_used_at.isnot(None)).count()
+        stats['api_keys_used_today'] = ApiKey.query.filter(
+            ApiKey.last_used_at >= today_start,
+            ApiKey.last_used_at <= today_end
+        ).count()
+    else:
+        # Normal user statistics - only their companies
+        user_company_ids = [c.id for c in Company.query.filter_by(user_id=current_user.id).all()]
+        
+        if user_company_ids:
+            stats['total_invoices'] = Invoice.query.filter(Invoice.company_id.in_(user_company_ids)).count()
+            
+            # Last sync datetime (max synced_at from user's invoices)
+            last_sync = db.session.query(func.max(Invoice.synced_at)).filter(
+                Invoice.company_id.in_(user_company_ids)
+            ).scalar()
+            stats['last_sync_datetime'] = last_sync
+            
+            # Invoices synced today
+            today_start = datetime.combine(today, datetime.min.time()).replace(tzinfo=timezone.utc)
+            today_end = datetime.combine(today, datetime.max.time()).replace(tzinfo=timezone.utc)
+            stats['invoices_synced_today'] = Invoice.query.filter(
+                Invoice.company_id.in_(user_company_ids),
+                Invoice.synced_at >= today_start,
+                Invoice.synced_at <= today_end
+            ).count()
+        else:
+            stats['total_invoices'] = 0
+            stats['last_sync_datetime'] = None
+            stats['invoices_synced_today'] = 0
+    
     # Get user's companies
     companies = Company.query.filter_by(user_id=current_user.id).all()
     
@@ -26,7 +83,8 @@ def index():
             invoices=None,
             active_tab='all',
             sort_by='invoice_date',
-            sort_order='desc'
+            sort_order='desc',
+            stats=stats
         )
     
     # Get selected company from session or default to first
@@ -103,7 +161,8 @@ def index():
         invoices=invoices,
         active_tab=invoice_type_filter,
         sort_by=sort_by,
-        sort_order=sort_order
+        sort_order=sort_order,
+        stats=stats
     )
 
 @dashboard_bp.route('/switch-company', methods=['POST'])
