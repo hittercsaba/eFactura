@@ -217,6 +217,28 @@ class InvoiceService:
             if not invoice_root:
                 invoice_root = invoice_dict
             
+            # Helper: recursively find first text value for any matching key names
+            def _find_first_text(obj, candidate_keys, depth=0, max_depth=8):
+                """Recursively search for first matching key and return its text value"""
+                if depth > max_depth:
+                    return None
+                if isinstance(obj, dict):
+                    for k, v in obj.items():
+                        k_lower = str(k).lower()
+                        if any(ck.lower() == k_lower for ck in candidate_keys):
+                            val = InvoiceService._extract_text_value(v)
+                            if val:
+                                return val
+                        res = _find_first_text(v, candidate_keys, depth+1, max_depth)
+                        if res:
+                            return res
+                elif isinstance(obj, list):
+                    for item in obj:
+                        res = _find_first_text(item, candidate_keys, depth+1, max_depth)
+                        if res:
+                            return res
+                return None
+            
             # Extract supplier/issuer information (SELLER)
             # Path: cac:AccountingSupplierParty/cac:Party/cac:PartyLegalEntity/cbc:RegistrationName (BT-27)
             supplier_party = InvoiceService._safe_get(
@@ -314,10 +336,10 @@ class InvoiceService:
                                 invoice_data['issuer_vat_id'] = company_id
                                 break
             
-            # Extra fallback for issuer/supplier name: search entire invoice for RegistrationName/Name
-            if not invoice_data['issuer_name']:
+            # Extra fallback for issuer/supplier name: search within supplier_party if we found it
+            if not invoice_data['issuer_name'] and supplier_party:
                 issuer_fallback = _find_first_text(
-                    invoice_root,
+                    supplier_party,
                     ['cbc:RegistrationName', 'RegistrationName', 'cbc:Name', 'Name']
                 )
                 if issuer_fallback:
@@ -375,10 +397,10 @@ class InvoiceService:
                     if party_name:
                         invoice_data['receiver_name'] = party_name
             
-            # Extra fallback for receiver name: search entire invoice for RegistrationName/Name
-            if not invoice_data['receiver_name']:
+            # Extra fallback for receiver name: search within customer_party if we found it
+            if not invoice_data['receiver_name'] and customer_party:
                 receiver_fallback = _find_first_text(
-                    invoice_root,
+                    customer_party,
                     ['cbc:RegistrationName', 'RegistrationName', 'cbc:Name', 'Name']
                 )
                 if receiver_fallback:
@@ -463,27 +485,6 @@ class InvoiceService:
             currency = InvoiceService._extract_text_value(currency_raw)
             if currency:
                 invoice_data['currency'] = currency
-            
-            # Helper: recursively find first text value for any matching key names
-            def _find_first_text(obj, candidate_keys, depth=0, max_depth=8):
-                if depth > max_depth:
-                    return None
-                if isinstance(obj, dict):
-                    for k, v in obj.items():
-                        k_lower = str(k).lower()
-                        if any(ck.lower() == k_lower for ck in candidate_keys):
-                            val = InvoiceService._extract_text_value(v)
-                            if val:
-                                return val
-                        res = _find_first_text(v, candidate_keys, depth+1, max_depth)
-                        if res:
-                            return res
-                elif isinstance(obj, list):
-                    for item in obj:
-                        res = _find_first_text(item, candidate_keys, depth+1, max_depth)
-                        if res:
-                            return res
-                return None
             
             # Extract total amount from LegalMonetaryTotal
             # According to Peppol BIS Billing 3.0:
