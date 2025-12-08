@@ -239,6 +239,27 @@ class InvoiceService:
                             return res
                 return None
             
+            # Helper: recursively find first matching section by key substring
+            def _find_section(obj, matchers, depth=0, max_depth=8):
+                if depth > max_depth or not isinstance(obj, dict):
+                    return None
+                for k, v in obj.items():
+                    k_lower = str(k).lower()
+                    if any(m in k_lower for m in matchers):
+                        return v
+                for v in obj.values():
+                    if isinstance(v, dict):
+                        res = _find_section(v, matchers, depth+1, max_depth)
+                        if res:
+                            return res
+                    elif isinstance(v, list):
+                        for item in v:
+                            if isinstance(item, dict):
+                                res = _find_section(item, matchers, depth+1, max_depth)
+                                if res:
+                                    return res
+                return None
+
             # Extract supplier/issuer information (SELLER)
             # Path: cac:AccountingSupplierParty/cac:Party/cac:PartyLegalEntity/cbc:RegistrationName (BT-27)
             supplier_party = InvoiceService._safe_get(
@@ -248,6 +269,8 @@ class InvoiceService:
                 ['accountingSupplierParty', 'party'],
                 default={}
             )
+            if not supplier_party:
+                supplier_party = _find_section(invoice_root, ['accountingsupplierparty'])
             
             if supplier_party:
                 # Extract issuer name from PartyLegalEntity -> RegistrationName (BT-27)
@@ -356,6 +379,8 @@ class InvoiceService:
                 ['accountingCustomerParty', 'party'],
                 default={}
             )
+            if not customer_party:
+                customer_party = _find_section(invoice_root, ['accountingcustomerparty'])
             
             if customer_party:
                 # Extract receiver name from PartyLegalEntity -> RegistrationName (BT-44)
