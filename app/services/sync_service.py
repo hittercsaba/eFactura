@@ -497,6 +497,11 @@ def _sync_company_invoices_impl(company_id, force=False):
                     file_content = anaf_service.descarcare_factura(invoice_id)
                 
                     # Handle binary content - could be ZIP or XML
+                    # Check if file_content is empty
+                    if not file_content:
+                        current_app.logger.warning(f"Empty file content for invoice {invoice_id}")
+                        continue
+                    
                     # Try to detect if it's ZIP (starts with PK\x03\x04) or XML
                     if file_content.startswith(b'PK\x03\x04'):
                         # It's a ZIP file - extract unsigned Invoice XML from it
@@ -524,7 +529,15 @@ def _sync_company_invoices_impl(company_id, force=False):
                         # It's XML directly
                         xml_content = file_content.decode('utf-8')
                     else:
-                        current_app.logger.warning(f"Unknown file format for invoice {invoice_id}")
+                        # Log more details about the unknown format
+                        file_start = file_content[:50] if len(file_content) >= 50 else file_content
+                        file_start_hex = file_content[:20].hex() if len(file_content) >= 20 else file_content.hex()
+                        current_app.logger.warning(
+                            f"Unknown file format for invoice {invoice_id}. "
+                            f"File size: {len(file_content)} bytes, "
+                            f"First 50 bytes (ascii): {file_start}, "
+                            f"First 20 bytes (hex): {file_start_hex}"
+                        )
                         continue
                         
                 except Exception as e:
