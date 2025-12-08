@@ -499,15 +499,26 @@ class InvoiceService:
                 legal_monetary_total = {}
             
             # Helper function to extract amount and currency from amount field
-            def extract_amount_and_currency(amount_obj, field_name):
-                """Extract amount value and currency from amount field object"""
+            def extract_amount_and_currency(amount_obj, field_name, expected_currency=None):
+                """
+                Extract amount value and currency from amount field object
+                
+                If expected_currency is provided, prefer amounts where @currencyID matches it.
+                """
                 amount_value = None
                 currency_value = None
                 
                 if amount_obj:
                     # Extract currency from attributes first
                     if isinstance(amount_obj, dict):
-                        currency_value = amount_obj.get('@currencyID') or amount_obj.get('currencyID')
+                        currency_value = (
+                            amount_obj.get('@currencyID')
+                            or amount_obj.get('currencyID')
+                        )
+                    
+                    # If a currency is present but doesn't match expected_currency, ignore this amount
+                    if expected_currency and currency_value and currency_value != expected_currency:
+                        return None, currency_value
                     
                     # Extract amount value
                     amount_text = InvoiceService._extract_text_value(amount_obj)
@@ -538,7 +549,11 @@ class InvoiceService:
                     )
                 
                 if tax_inclusive_obj:
-                    amount_val, curr_val = extract_amount_and_currency(tax_inclusive_obj, 'TaxInclusiveAmount')
+                    amount_val, curr_val = extract_amount_and_currency(
+                        tax_inclusive_obj,
+                        'TaxInclusiveAmount',
+                        expected_currency=invoice_data.get('currency')
+                    )
                     if amount_val is not None:
                         invoice_data['total_amount'] = amount_val
                     if curr_val and not invoice_data['currency']:
@@ -561,7 +576,11 @@ class InvoiceService:
                         )
                     
                     if payable_amount_obj:
-                        amount_val, curr_val = extract_amount_and_currency(payable_amount_obj, 'PayableAmount')
+                        amount_val, curr_val = extract_amount_and_currency(
+                            payable_amount_obj,
+                            'PayableAmount',
+                            expected_currency=invoice_data.get('currency')
+                        )
                         if amount_val is not None:
                             invoice_data['total_amount'] = amount_val
                         if curr_val and not invoice_data['currency']:
@@ -583,7 +602,11 @@ class InvoiceService:
                         )
                     
                     if tax_exclusive_obj:
-                        amount_val, curr_val = extract_amount_and_currency(tax_exclusive_obj, 'TaxExclusiveAmount')
+                    amount_val, curr_val = extract_amount_and_currency(
+                        tax_exclusive_obj,
+                        'TaxExclusiveAmount',
+                        expected_currency=invoice_data.get('currency')
+                    )
                         if amount_val is not None:
                             invoice_data['total_amount'] = amount_val
                         if curr_val and not invoice_data['currency']:

@@ -645,14 +645,22 @@ document.addEventListener('DOMContentLoaded', function() {
                     console.log('Line items length:', data.line_items ? data.line_items.length : 0);
                     
                     if (data.line_items && data.line_items.length > 0) {
+                        // Basic RO unit name lookup; fallback to the code if unknown
+                        const unitNamesRo = {
+                            'H87': 'bucată',
+                            'C62': 'unitate',
+                            'MON': 'lună'
+                        };
+
                         data.line_items.forEach(function(item) {
                             const row = document.createElement('tr');
                             
                             // Format values
                             const lineId = item.line_id || '-';
                             const itemName = item.item_name || '-';
+                            const unitLabel = item.unit_code ? (unitNamesRo[item.unit_code] || item.unit_code) : '';
                             const quantity = item.quantity !== null && item.quantity !== undefined ? 
-                                parseFloat(item.quantity).toFixed(2) + (item.unit_code ? ` ${item.unit_code}` : '') : '-';
+                                `${parseFloat(item.quantity).toFixed(2)}${unitLabel ? ' ' + unitLabel : ''}` : '-';
                             const unitPrice = item.unit_price !== null && item.unit_price !== undefined ? 
                                 parseFloat(item.unit_price).toFixed(2) + ` ${item.currency || data.invoice.currency || 'RON'}` : '-';
                             const lineTotal = item.line_total !== null && item.line_total !== undefined ? 
