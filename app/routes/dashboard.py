@@ -1,8 +1,9 @@
-from flask import Blueprint, render_template, session, redirect, url_for, request, flash, send_file, Response, current_app
+from flask import Blueprint, render_template, session, redirect, url_for, request, flash, send_file, Response, current_app, jsonify
 from flask_login import login_required, current_user
 from app.models import Company, Invoice, User, ApiKey, db
 from app.utils.decorators import approved_required
 from app.services.anaf_service import ANAFService
+from app.services.invoice_service import InvoiceService
 from sqlalchemy import desc, asc, func
 from datetime import datetime, timezone
 import zipfile
@@ -266,4 +267,162 @@ def download_invoice(invoice_id):
     # If all else fails, return error
     flash('Invoice file not available.', 'error')
     return redirect(url_for('dashboard.index'))
+
+@dashboard_bp.route('/invoice/<int:invoice_id>/details')
+@login_required
+@approved_required
+def invoice_details(invoice_id):
+    """Get invoice details including line items as JSON"""
+    # Get invoice and verify it belongs to user's company
+    invoice = Invoice.query.get_or_404(invoice_id)
+    
+    # Verify invoice belongs to user's company
+    if invoice.company.user_id != current_user.id:
+        return jsonify({'error': 'Access denied'}), 403
+    
+    # Extract unsigned XML from invoice
+    xml_content = None
+    
+    # Try to get unsigned XML from stored ZIP file first
+    if invoice.zip_file_path:
+        try:
+            from app.services.storage_service import InvoiceStorageService
+            zip_content = InvoiceStorageService.read_zip_file(invoice.zip_file_path)
+            if zip_content and zip_content.startswith(b'PK\x03\x04'):
+                # Extract unsigned XML from ZIP
+                with zipfile.ZipFile(io.BytesIO(zip_content)) as zip_file:
+                    xml_content, xml_filename = InvoiceService.extract_unsigned_xml_from_zip(zip_file)
+                    if xml_content:
+                        current_app.logger.debug(f"Extracted unsigned XML from stored ZIP for invoice {invoice.id}: {xml_filename}")
+        except Exception as e:
+            current_app.logger.warning(f"Could not extract XML from stored ZIP for invoice {invoice.id}: {str(e)}")
+    
+    # Fallback to stored xml_content
+    if not xml_content:
+        xml_content = invoice.xml_content
+    
+    if not xml_content:
+        return jsonify({
+            'error': 'Invoice XML content not available',
+            'invoice': {
+                'id': invoice.id,
+                'anaf_id': invoice.anaf_id,
+                'invoice_type': invoice.invoice_type,
+                'invoice_date': invoice.invoice_date.isoformat() if invoice.invoice_date else None,
+                'total_amount': float(invoice.total_amount) if invoice.total_amount else None,
+                'currency': invoice.currency,
+                'issuer_name': invoice.issuer_name or invoice.supplier_name,
+                'issuer_cif': invoice.cif_emitent,
+                'receiver_name': invoice.receiver_name,
+                'receiver_cif': invoice.cif_beneficiar
+            },
+            'line_items': []
+        })
+    
+    # Extract line items from XML
+    try:
+        # Debug: Check XML structure first
+        import xmltodict
+        try:
+            test_dict = xmltodict.parse(xml_content, process_namespaces=True, namespaces={})
+            invoice_root_test = test_dict.get('Invoice', test_dict)
+            if isinstance(invoice_root_test, dict):
+                all_keys = list(invoice_root_test.keys())
+                line_keys = [k for k in all_keys if 'line' in k.lower() or 'Line' in k]
+                current_app.logger.info(f"Invoice root has {len(all_keys)} keys. Keys with 'line': {line_keys}")
+                if 'InvoiceLine' in invoice_root_test:
+                    il_test = invoice_root_test['InvoiceLine']
+                    current_app.logger.info(f"Found InvoiceLine! Type: {type(il_test)}")
+                    if isinstance(il_test, dict):
+                        current_app.logger.info(f"InvoiceLine keys: {list(il_test.keys())[:10]}")
+        except Exception as debug_e:
+            current_app.logger.warning(f"Debug parsing failed: {str(debug_e)}")
+        
+        line_items = InvoiceService.extract_invoice_line_items(xml_content)
+        current_app.logger.info(f"Extracted {len(line_items)} line items for invoice {invoice.id}")
+        if line_items:
+            current_app.logger.info(f"First line item: {line_items[0]}")
+        else:
+            current_app.logger.warning(f"No line items found for invoice {invoice.id}. XML length: {len(xml_content) if xml_content else 0}")
+            # Try to debug by checking if InvoiceLine exists in XML
+            if xml_content and '<cac:InvoiceLine' in xml_content:
+                current_app.logger.warning(f"InvoiceLine tag found in XML but extraction returned empty")
+            elif xml_content and 'InvoiceLine' in xml_content:
+                current_app.logger.warning(f"InvoiceLine text found in XML but extraction returned empty")
+    except Exception as e:
+        current_app.logger.error(f"Error extracting line items for invoice {invoice.id}: {str(e)}", exc_info=True)
+        line_items = []
+    
+    # Prepare response
+    response_data = {
+        'invoice': {
+            'id': invoice.id,
+            'anaf_id': invoice.anaf_id,
+            'invoice_type': invoice.invoice_type,
+            'invoice_date': invoice.invoice_date.isoformat() if invoice.invoice_date else None,
+            'total_amount': float(invoice.total_amount) if invoice.total_amount else None,
+            'currency': invoice.currency or 'RON',
+            'issuer_name': invoice.issuer_name or invoice.supplier_name,
+            'issuer_cif': invoice.cif_emitent,
+            'receiver_name': invoice.receiver_name,
+            'receiver_cif': invoice.cif_beneficiar,
+            'synced_at': invoice.synced_at.isoformat() if invoice.synced_at else None
+        },
+        'line_items': line_items
+    }
+    
+    # Add debug info to response if no line items found (for troubleshooting)
+    if not line_items and xml_content:
+        # Check if InvoiceLine exists in raw XML
+        has_cac_invoice_line = '<cac:InvoiceLine' in xml_content
+        has_invoice_line = '<InvoiceLine' in xml_content and '<cac:InvoiceLine' not in xml_content
+        
+        # Try to parse and see what keys we get
+        debug_info = {
+            'xml_length': len(xml_content),
+            'has_cac_invoice_line_tag': has_cac_invoice_line,
+            'has_invoice_line_tag': has_invoice_line,
+        }
+        
+        try:
+            import xmltodict
+            test_parse = xmltodict.parse(xml_content, process_namespaces=True, namespaces={})
+            
+            # Show root keys
+            debug_info['root_keys'] = list(test_parse.keys())[:5]
+            
+            invoice_root_test = test_parse.get('Invoice', test_parse)
+            
+            # If Invoice not found, try to find it by checking all root keys
+            if invoice_root_test == test_parse and len(test_parse) == 1:
+                # Only one root key - might be namespace-prefixed
+                root_key = list(test_parse.keys())[0]
+                debug_info['actual_root_key'] = str(root_key)
+                invoice_root_test = test_parse[root_key]
+            
+            if isinstance(invoice_root_test, dict):
+                all_keys = list(invoice_root_test.keys())
+                debug_info['invoice_root_keys_count'] = len(all_keys)
+                debug_info['invoice_root_keys_sample'] = all_keys[:20]  # First 20 keys
+                line_keys = [k for k in all_keys if 'line' in k.lower() or 'Line' in k]
+                debug_info['keys_with_line'] = line_keys[:10]  # First 10
+                
+                # Also search for any key containing InvoiceLine
+                invoice_line_keys = [k for k in all_keys if 'InvoiceLine' in str(k)]
+                debug_info['invoice_line_keys_found'] = invoice_line_keys
+                
+                if 'InvoiceLine' in invoice_root_test:
+                    il = invoice_root_test['InvoiceLine']
+                    debug_info['invoice_line_found'] = True
+                    debug_info['invoice_line_type'] = str(type(il))
+                    if isinstance(il, dict):
+                        debug_info['invoice_line_keys'] = list(il.keys())[:15]
+        except Exception as e:
+            debug_info['parse_error'] = str(e)
+            import traceback
+            debug_info['parse_error_traceback'] = traceback.format_exc()
+        
+        response_data['debug'] = debug_info
+    
+    return jsonify(response_data)
 

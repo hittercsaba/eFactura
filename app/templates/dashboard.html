@@ -358,7 +358,7 @@
                         </thead>
                         <tbody>
                             {% for invoice in invoices.items %}
-                            <tr>
+                            <tr class="invoice-row" data-invoice-id="{{ invoice.id }}" style="cursor: pointer;">
                                 <td>
                                     {% if invoice.invoice_type == 'FACTURA PRIMITA' %}
                                         <span class="badge bg-success">Received</span>
@@ -385,7 +385,8 @@
                                 <td>
                                     <a href="{{ url_for('dashboard.download_invoice', invoice_id=invoice.id) }}" 
                                        class="btn btn-sm btn-outline-primary" 
-                                       title="Download Invoice ZIP">
+                                       title="Download Invoice ZIP"
+                                       onclick="event.stopPropagation();">
                                         <i class="bi bi-download"></i> Download
                                     </a>
                                 </td>
@@ -454,5 +455,240 @@
         </div>
     </div>
 {% endif %}
+
+<!-- Invoice Details Modal -->
+<div class="modal fade" id="invoiceDetailsModal" tabindex="-1" aria-labelledby="invoiceDetailsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="invoiceDetailsModalLabel">
+                    <i class="bi bi-receipt"></i> Invoice Details
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Loading State -->
+                <div id="invoiceModalLoading" class="text-center py-5">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-3 text-muted">Loading invoice details...</p>
+                </div>
+                
+                <!-- Error State -->
+                <div id="invoiceModalError" class="alert alert-danger" style="display: none;">
+                    <i class="bi bi-exclamation-triangle"></i> <span id="invoiceModalErrorText"></span>
+                </div>
+                
+                <!-- Content -->
+                <div id="invoiceModalContent" style="display: none;">
+                    <!-- Invoice Header Information -->
+                    <div class="mb-4">
+                        <h6 class="mb-3"><i class="bi bi-info-circle"></i> Invoice Information</h6>
+                        <div class="table-responsive">
+                            <table class="table table-bordered table-sm">
+                                <tbody>
+                                    <tr>
+                                        <th style="width: 200px;">Invoice Number</th>
+                                        <td id="modal-invoice-number">-</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Invoice Date</th>
+                                        <td id="modal-invoice-date">-</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Type</th>
+                                        <td id="modal-invoice-type">-</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Issuer Name</th>
+                                        <td id="modal-issuer-name">-</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Issuer CIF</th>
+                                        <td id="modal-issuer-cif">-</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Receiver Name</th>
+                                        <td id="modal-receiver-name">-</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Receiver CIF</th>
+                                        <td id="modal-receiver-cif">-</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Total Amount</th>
+                                        <td id="modal-total-amount"><strong>-</strong></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <!-- Invoice Line Items -->
+                    <div>
+                        <h6 class="mb-3"><i class="bi bi-list-ul"></i> Invoice Line Items</h6>
+                        <div class="table-responsive">
+                            <table class="table table-striped table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Line ID</th>
+                                        <th>Product/Service</th>
+                                        <th>Quantity</th>
+                                        <th>Unit Price</th>
+                                        <th>Total</th>
+                                        <th>VAT Rate</th>
+                                        <th>VAT Category</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="modal-line-items-body">
+                                    <tr>
+                                        <td colspan="7" class="text-center text-muted">No line items available</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .invoice-row:hover {
+        background-color: #f8f9fa;
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const modal = new bootstrap.Modal(document.getElementById('invoiceDetailsModal'));
+    const modalLoading = document.getElementById('invoiceModalLoading');
+    const modalError = document.getElementById('invoiceModalError');
+    const modalErrorText = document.getElementById('invoiceModalErrorText');
+    const modalContent = document.getElementById('invoiceModalContent');
+    
+    // Attach click handlers to invoice rows
+    document.querySelectorAll('.invoice-row').forEach(function(row) {
+        row.addEventListener('click', function(e) {
+            // Don't trigger if clicking on the download button
+            if (e.target.closest('a.btn')) {
+                return;
+            }
+            
+            const invoiceId = this.getAttribute('data-invoice-id');
+            if (!invoiceId) {
+                return;
+            }
+            
+            // Show modal and loading state
+            modal.show();
+            modalLoading.style.display = 'block';
+            modalError.style.display = 'none';
+            modalContent.style.display = 'none';
+            
+            // Fetch invoice details
+            fetch(`/invoice/${invoiceId}/details`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Failed to fetch invoice details');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    console.log('Invoice details response:', data);
+                    
+                    if (data.error) {
+                        throw new Error(data.error);
+                    }
+                    
+                    // Populate invoice header information
+                    document.getElementById('modal-invoice-number').textContent = data.invoice.anaf_id || '-';
+                    document.getElementById('modal-invoice-date').textContent = data.invoice.invoice_date ? new Date(data.invoice.invoice_date).toLocaleDateString() : '-';
+                    
+                    // Invoice type badge
+                    let typeBadge = '-';
+                    if (data.invoice.invoice_type === 'FACTURA PRIMITA') {
+                        typeBadge = '<span class="badge bg-success">Received</span>';
+                    } else if (data.invoice.invoice_type === 'FACTURA TRIMISA') {
+                        typeBadge = '<span class="badge bg-primary">Sent</span>';
+                    } else if (data.invoice.invoice_type) {
+                        typeBadge = `<span class="badge bg-secondary">${data.invoice.invoice_type}</span>`;
+                    }
+                    document.getElementById('modal-invoice-type').innerHTML = typeBadge;
+                    
+                    document.getElementById('modal-issuer-name').textContent = data.invoice.issuer_name || '-';
+                    document.getElementById('modal-issuer-cif').textContent = data.invoice.issuer_cif || '-';
+                    document.getElementById('modal-receiver-name').textContent = data.invoice.receiver_name || '-';
+                    document.getElementById('modal-receiver-cif').textContent = data.invoice.receiver_cif || '-';
+                    
+                    // Format total amount
+                    let totalAmount = '-';
+                    if (data.invoice.total_amount !== null && data.invoice.total_amount !== undefined) {
+                        totalAmount = `${parseFloat(data.invoice.total_amount).toFixed(2)} ${data.invoice.currency || 'RON'}`;
+                    }
+                    document.getElementById('modal-total-amount').innerHTML = `<strong>${totalAmount}</strong>`;
+                    
+                    // Populate line items table
+                    const lineItemsBody = document.getElementById('modal-line-items-body');
+                    lineItemsBody.innerHTML = '';
+                    
+                    console.log('Line items:', data.line_items);
+                    console.log('Line items length:', data.line_items ? data.line_items.length : 0);
+                    
+                    if (data.line_items && data.line_items.length > 0) {
+                        data.line_items.forEach(function(item) {
+                            const row = document.createElement('tr');
+                            
+                            // Format values
+                            const lineId = item.line_id || '-';
+                            const itemName = item.item_name || '-';
+                            const quantity = item.quantity !== null && item.quantity !== undefined ? 
+                                parseFloat(item.quantity).toFixed(2) + (item.unit_code ? ` ${item.unit_code}` : '') : '-';
+                            const unitPrice = item.unit_price !== null && item.unit_price !== undefined ? 
+                                parseFloat(item.unit_price).toFixed(2) + ` ${item.currency || data.invoice.currency || 'RON'}` : '-';
+                            const lineTotal = item.line_total !== null && item.line_total !== undefined ? 
+                                parseFloat(item.line_total).toFixed(2) + ` ${item.currency || data.invoice.currency || 'RON'}` : '-';
+                            const vatRate = item.vat_rate !== null && item.vat_rate !== undefined ? 
+                                parseFloat(item.vat_rate).toFixed(2) + '%' : '-';
+                            const vatCategory = item.vat_category || '-';
+                            
+                            row.innerHTML = `
+                                <td>${lineId}</td>
+                                <td>${itemName}</td>
+                                <td>${quantity}</td>
+                                <td>${unitPrice}</td>
+                                <td><strong>${lineTotal}</strong></td>
+                                <td>${vatRate}</td>
+                                <td>${vatCategory}</td>
+                            `;
+                            lineItemsBody.appendChild(row);
+                        });
+                    } else {
+                        lineItemsBody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">No line items available</td></tr>';
+                    }
+                    
+                    // Show content
+                    modalLoading.style.display = 'none';
+                    modalContent.style.display = 'block';
+                })
+                .catch(error => {
+                    console.error('Error fetching invoice details:', error);
+                    modalLoading.style.display = 'none';
+                    modalErrorText.textContent = error.message || 'An error occurred while loading invoice details.';
+                    modalError.style.display = 'block';
+                });
+        });
+    });
+});
+</script>
 {% endblock %}
 

@@ -99,11 +99,13 @@ class InvoiceService:
             return None
         if isinstance(value, dict):
             # xmltodict returns dicts with #text key for text content
-            return value.get('#text') or value.get('text') or None
+            # Also check for @text or text keys
+            return value.get('#text') or value.get('text') or value.get('@text') or None
         if isinstance(value, str):
-            return value
+            return value.strip() if value.strip() else None
         # Fallback: convert to string
-        return str(value) if value else None
+        result = str(value) if value else None
+        return result.strip() if result else None
     
     @staticmethod
     def _safe_get(data, *keys, default=None):
@@ -646,6 +648,511 @@ class InvoiceService:
                 'total_amount': None,
                 'currency': None
             }
+    
+    @staticmethod
+    def extract_invoice_line_items(xml_content):
+        """
+        Extract invoice line items from unsigned Invoice XML following Peppol UBL 3.0 structure.
+        Documentation: https://docs.peppol.eu/poacc/billing/3.0/syntax/ubl-invoice/tree/
+        
+        Args:
+            xml_content: XML string content (unsigned Invoice XML)
+        
+        Returns:
+            List of dictionaries, each containing:
+            - line_id: Invoice line identifier (BT-126)
+            - item_name: Item name (BT-153)
+            - quantity: Invoiced quantity (BT-129)
+            - unit_code: Unit of measure code
+            - unit_price: Item net price (BT-146)
+            - line_total: Invoice line net amount (BT-131)
+            - vat_rate: VAT category rate (BT-151)
+            - vat_category: VAT category code (BT-150)
+            - currency: Currency code
+        """
+        try:
+            # Parse XML to ordered dict - try both with and without namespace processing
+            invoice_dict = None
+            invoice_root = None
+            
+            # Try parsing with namespace processing first (strips namespace prefixes)
+            invoice_dict = None
+            try:
+                invoice_dict = xmltodict.parse(xml_content, process_namespaces=True, namespaces={})
+            except:
+                pass
+            
+            # If that failed, try without namespace processing (keeps prefixes like cac:InvoiceLine)
+            if not invoice_dict:
+                try:
+                    invoice_dict = xmltodict.parse(xml_content)
+                except Exception as e:
+                    # Return empty list if parsing fails completely
+                    return []
+            
+            # If we got a dict but it's empty or doesn't look right, try without namespace processing
+            # Sometimes process_namespaces=True doesn't work as expected
+            if invoice_dict and isinstance(invoice_dict, dict):
+                # Check if we can find InvoiceLine - if not, try parsing without namespace processing
+                test_root = invoice_dict.get('Invoice', invoice_dict)
+                if isinstance(test_root, dict):
+                    # Check if InvoiceLine exists (with or without namespace)
+                    has_invoice_line = (
+                        'InvoiceLine' in test_root or 
+                        'cac:InvoiceLine' in test_root or
+                        any('InvoiceLine' in str(k) for k in test_root.keys())
+                    )
+                    # If InvoiceLine not found and we used process_namespaces=True, try without it
+                    if not has_invoice_line:
+                        try:
+                            invoice_dict_no_ns = xmltodict.parse(xml_content)
+                            # Verify this version has InvoiceLine
+                            test_root_no_ns = invoice_dict_no_ns.get('Invoice', invoice_dict_no_ns)
+                            if isinstance(test_root_no_ns, dict):
+                                has_invoice_line_no_ns = (
+                                    'InvoiceLine' in test_root_no_ns or 
+                                    'cac:InvoiceLine' in test_root_no_ns or
+                                    any('InvoiceLine' in str(k) for k in test_root_no_ns.keys())
+                                )
+                                if has_invoice_line_no_ns:
+                                    invoice_dict = invoice_dict_no_ns
+                        except:
+                            pass  # Keep the original parse result
+            
+            # Find Invoice root element (same logic as parse_xml_to_json)
+            # xmltodict with process_namespaces=True might create keys with full namespace URIs
+            # or strip them depending on the XML structure
+            invoice_root = None
+            
+            # Try common key variations
+            for possible_key in ['Invoice', 'invoice', 'ubl:Invoice']:
+                if possible_key in invoice_dict:
+                    invoice_root = invoice_dict[possible_key]
+                    break
+            
+            # If not found, check all root keys (might have namespace URI in key)
+            if not invoice_root:
+                root_keys = list(invoice_dict.keys())
+                for key in root_keys:
+                    key_str = str(key)
+                    # Look for key containing "Invoice" but not "Signature"
+                    if 'Invoice' in key_str and 'Signature' not in key_str:
+                        invoice_root = invoice_dict[key]
+                        break
+                
+                # If still not found, check if root dict itself looks like invoice data
+                if not invoice_root:
+                    if any('AccountingSupplierParty' in str(k) or 'LegalMonetaryTotal' in str(k) or 'InvoiceLine' in str(k) for k in root_keys):
+                        invoice_root = invoice_dict
+                    else:
+                        # Last resort: use the dict itself
+                        invoice_root = invoice_dict
+            
+            if not invoice_root or not isinstance(invoice_root, dict):
+                invoice_root = invoice_dict if isinstance(invoice_dict, dict) else {}
+            
+            # Extract invoice lines - cac:InvoiceLine (1..n)
+            # When process_namespaces=True, cac:InvoiceLine becomes just InvoiceLine
+            # When process_namespaces=False, it stays as cac:InvoiceLine
+            invoice_lines_raw = None
+            
+            # Method 1: Direct access - try both with and without namespace prefix
+            # When process_namespaces=True, cac:InvoiceLine becomes just InvoiceLine
+            # When process_namespaces=False, it stays as cac:InvoiceLine
+            # Also check for namespace URI in key (e.g., {urn:...}InvoiceLine)
+            if isinstance(invoice_root, dict):
+                all_keys = list(invoice_root.keys())
+                
+                # Try exact match first (most common case)
+                if 'InvoiceLine' in invoice_root:
+                    invoice_lines_raw = invoice_root['InvoiceLine']
+                # Try with namespace prefix
+                elif 'cac:InvoiceLine' in invoice_root:
+                    invoice_lines_raw = invoice_root['cac:InvoiceLine']
+                # Try to find key containing "InvoiceLine" (might have namespace URI)
+                else:
+                    for key in all_keys:
+                        key_str = str(key)
+                        # Look for key that contains "InvoiceLine" but not "Reference"
+                        if 'InvoiceLine' in key_str and 'Reference' not in key_str:
+                            invoice_lines_raw = invoice_root[key]
+                            break
+                    
+                    # If still not found, try case-insensitive search
+                    if not invoice_lines_raw:
+                        key_lookup = {k.lower(): k for k in all_keys}
+                        if 'invoiceline' in key_lookup:
+                            invoice_lines_raw = invoice_root[key_lookup['invoiceline']]
+                        # Try with _safe_get as final fallback
+                        else:
+                            invoice_lines_raw = InvoiceService._safe_get(
+                                invoice_root,
+                                'InvoiceLine',  # Try without prefix first
+                                'cac:InvoiceLine',  # Then with prefix
+                                'invoiceLine',
+                                default=None
+                            )
+            
+            # Method 2: If not found, search recursively for InvoiceLine
+            if not invoice_lines_raw:
+                def find_invoice_lines(obj, depth=0, max_depth=5):
+                    """Recursively search for InvoiceLine elements"""
+                    if depth > max_depth:
+                        return None
+                    
+                    if not isinstance(obj, dict):
+                        return None
+                    
+                    # Check current level for InvoiceLine (case-insensitive)
+                    for key in obj.keys():
+                        if isinstance(key, str):
+                            key_lower = key.lower()
+                            # Look for InvoiceLine (but not InvoiceLineReference or similar)
+                            if key_lower == 'invoiceline' or (key_lower.endswith(':invoiceline') and 'reference' not in key_lower):
+                                result = obj[key]
+                                if result:  # Only return if not None/empty
+                                    return result
+                    
+                    # Recurse into nested dicts
+                    for key, value in obj.items():
+                        if isinstance(value, dict):
+                            result = find_invoice_lines(value, depth + 1, max_depth)
+                            if result:
+                                return result
+                        elif isinstance(value, list):
+                            # Check if list contains InvoiceLine dicts
+                            if value and isinstance(value[0], dict):
+                                # Check first item's keys to see if it looks like InvoiceLine
+                                first_keys = list(value[0].keys())
+                                if any('id' in k.lower() and ('item' in k.lower() or 'quantity' in k.lower() or 'price' in k.lower()) for k in first_keys):
+                                    return value
+                            # Otherwise recurse into list items
+                            for item in value:
+                                if isinstance(item, dict):
+                                    result = find_invoice_lines(item, depth + 1, max_depth)
+                                    if result:
+                                        return result
+                    return None
+                
+                invoice_lines_raw = find_invoice_lines(invoice_root)
+            
+            # Method 3: Last resort - search all keys in invoice_root for anything containing "line"
+            if not invoice_lines_raw and isinstance(invoice_root, dict):
+                for key in invoice_root.keys():
+                    if isinstance(key, str) and 'line' in key.lower() and 'reference' not in key.lower():
+                        potential = invoice_root[key]
+                        if potential:
+                            # Check if it looks like invoice line data
+                            if isinstance(potential, dict):
+                                # Check if it has InvoiceLine-like structure
+                                has_id = 'ID' in potential or 'id' in potential or 'cbc:ID' in potential
+                                has_item = 'Item' in potential or 'item' in potential or 'cac:Item' in potential
+                                has_price = 'Price' in potential or 'price' in potential or 'cac:Price' in potential
+                                has_quantity = 'InvoicedQuantity' in potential or 'invoicedQuantity' in potential or 'cbc:InvoicedQuantity' in potential
+                                
+                                if has_id or has_item or has_price or has_quantity:
+                                    invoice_lines_raw = potential
+                                    break
+                            elif isinstance(potential, list) and potential and isinstance(potential[0], dict):
+                                first_item = potential[0]
+                                has_id = 'ID' in first_item or 'id' in first_item or 'cbc:ID' in first_item
+                                has_item = 'Item' in first_item or 'item' in first_item or 'cac:Item' in first_item
+                                has_price = 'Price' in first_item or 'price' in first_item or 'cac:Price' in first_item
+                                
+                                if has_id or has_item or has_price:
+                                    invoice_lines_raw = potential
+                                    break
+            
+            # Handle both single item and list
+            if not invoice_lines_raw:
+                # Debug: log what keys are available
+                try:
+                    from flask import current_app
+                    if isinstance(invoice_root, dict):
+                        all_keys = list(invoice_root.keys())
+                        # Look for any key containing 'line' or 'Line'
+                        line_related_keys = [k for k in all_keys if 'line' in k.lower() or 'Line' in k]
+                        current_app.logger.debug(f"InvoiceLine not found. Available keys with 'line': {line_related_keys}")
+                        current_app.logger.debug(f"Total keys in invoice_root: {len(all_keys)}")
+                except (RuntimeError, ImportError):
+                    pass  # Not in Flask context, skip logging
+                return []
+            
+            if not isinstance(invoice_lines_raw, list):
+                invoice_lines_raw = [invoice_lines_raw]
+            
+            line_items = []
+            
+            for line in invoice_lines_raw:
+                if not isinstance(line, dict):
+                    continue
+                
+                line_item = {
+                    'line_id': None,
+                    'item_name': None,
+                    'quantity': None,
+                    'unit_code': None,
+                    'unit_price': None,
+                    'line_total': None,
+                    'vat_rate': None,
+                    'vat_category': None,
+                    'currency': None
+                }
+                
+                # Extract line ID (BT-126) - cbc:ID becomes ID when process_namespaces=True
+                # Try direct access first (faster)
+                line_id_raw = None
+                if isinstance(line, dict):
+                    line_id_raw = line.get('ID') or line.get('id') or line.get('cbc:ID')
+                
+                if not line_id_raw:
+                    line_id_raw = InvoiceService._safe_get(
+                        line,
+                        'ID',
+                        'id',
+                        'cbc:ID'
+                    )
+                
+                line_item['line_id'] = InvoiceService._extract_text_value(line_id_raw)
+                
+                # Extract item name (BT-153) - cac:Item becomes Item when process_namespaces=True
+                item_obj = None
+                if isinstance(line, dict):
+                    item_obj = line.get('Item') or line.get('item') or line.get('cac:Item')
+                
+                if not item_obj:
+                    item_obj = InvoiceService._safe_get(
+                        line,
+                        'Item',
+                        'item',
+                        'cac:Item',
+                        default={}
+                    )
+                
+                if item_obj and isinstance(item_obj, dict):
+                    # Extract item name (BT-153) - cbc:Name becomes Name
+                    item_name_raw = None
+                    if 'Name' in item_obj:
+                        item_name_raw = item_obj['Name']
+                    elif 'name' in item_obj:
+                        item_name_raw = item_obj['name']
+                    elif 'cbc:Name' in item_obj:
+                        item_name_raw = item_obj['cbc:Name']
+                    
+                    if not item_name_raw:
+                        item_name_raw = InvoiceService._safe_get(
+                            item_obj,
+                            'Name',
+                            'name',
+                            'cbc:Name'
+                        )
+                    
+                    line_item['item_name'] = InvoiceService._extract_text_value(item_name_raw)
+                    
+                    # Fallback to Description if Name is not available
+                    if not line_item['item_name']:
+                        item_desc_raw = None
+                        if 'Description' in item_obj:
+                            item_desc_raw = item_obj['Description']
+                        elif 'description' in item_obj:
+                            item_desc_raw = item_obj['description']
+                        elif 'cbc:Description' in item_obj:
+                            item_desc_raw = item_obj['cbc:Description']
+                        
+                        if not item_desc_raw:
+                            item_desc_raw = InvoiceService._safe_get(
+                                item_obj,
+                                'Description',
+                                'description',
+                                'cbc:Description'
+                            )
+                        
+                        line_item['item_name'] = InvoiceService._extract_text_value(item_desc_raw)
+                    
+                    # Extract VAT information from Item -> ClassifiedTaxCategory
+                    tax_category_obj = InvoiceService._safe_get(
+                        item_obj,
+                        'cac:ClassifiedTaxCategory',
+                        'ClassifiedTaxCategory',
+                        'classifiedTaxCategory',
+                        default={}
+                    )
+                    
+                    if tax_category_obj:
+                        # VAT rate (BT-151) - cbc:Percent
+                        vat_rate_raw = InvoiceService._safe_get(
+                            tax_category_obj,
+                            'cbc:Percent',
+                            'Percent',
+                            'percent'
+                        )
+                        vat_rate_text = InvoiceService._extract_text_value(vat_rate_raw)
+                        if vat_rate_text:
+                            try:
+                                line_item['vat_rate'] = float(vat_rate_text)
+                            except (ValueError, TypeError):
+                                pass
+                        
+                        # VAT category code (BT-150) - cbc:ID
+                        vat_category_raw = InvoiceService._safe_get(
+                            tax_category_obj,
+                            'cbc:ID',
+                            'ID',
+                            'id'
+                        )
+                        line_item['vat_category'] = InvoiceService._extract_text_value(vat_category_raw)
+                
+                # Extract quantity (BT-129) - cbc:InvoicedQuantity becomes InvoicedQuantity
+                quantity_obj = None
+                if isinstance(line, dict):
+                    quantity_obj = line.get('InvoicedQuantity') or line.get('invoicedQuantity') or line.get('cbc:InvoicedQuantity')
+                
+                if not quantity_obj:
+                    quantity_obj = InvoiceService._safe_get(
+                        line,
+                        'InvoicedQuantity',
+                        'invoicedQuantity',
+                        'cbc:InvoicedQuantity'
+                    )
+                
+                if quantity_obj:
+                    if isinstance(quantity_obj, dict):
+                        # Extract unit code from attribute (@unitCode is how xmltodict stores attributes)
+                        line_item['unit_code'] = quantity_obj.get('@unitCode') or quantity_obj.get('unitCode') or quantity_obj.get('@unitcode') or quantity_obj.get('unitcode')
+                        quantity_text = InvoiceService._extract_text_value(quantity_obj)
+                    else:
+                        # It's a simple string value
+                        quantity_text = str(quantity_obj) if quantity_obj else None
+                    
+                    if quantity_text:
+                        try:
+                            line_item['quantity'] = float(quantity_text)
+                        except (ValueError, TypeError):
+                            pass
+                
+                # Extract unit price (BT-146) - cac:Price becomes Price
+                price_obj = None
+                if isinstance(line, dict):
+                    price_obj = line.get('Price') or line.get('price') or line.get('cac:Price')
+                
+                if not price_obj:
+                    price_obj = InvoiceService._safe_get(
+                        line,
+                        'Price',
+                        'price',
+                        'cac:Price',
+                        default={}
+                    )
+                
+                if price_obj and isinstance(price_obj, dict):
+                    price_amount_obj = None
+                    if 'PriceAmount' in price_obj:
+                        price_amount_obj = price_obj['PriceAmount']
+                    elif 'priceAmount' in price_obj:
+                        price_amount_obj = price_obj['priceAmount']
+                    elif 'cbc:PriceAmount' in price_obj:
+                        price_amount_obj = price_obj['cbc:PriceAmount']
+                    
+                    if not price_amount_obj:
+                        price_amount_obj = InvoiceService._safe_get(
+                            price_obj,
+                            'PriceAmount',
+                            'priceAmount',
+                            'cbc:PriceAmount'
+                        )
+                    
+                    if price_amount_obj:
+                        if isinstance(price_amount_obj, dict):
+                            # Extract currency from attribute (@currencyID is how xmltodict stores attributes)
+                            currency_code = (price_amount_obj.get('@currencyID') or 
+                                           price_amount_obj.get('currencyID') or
+                                           price_amount_obj.get('@currencyid') or
+                                           price_amount_obj.get('currencyid'))
+                            if currency_code:
+                                line_item['currency'] = currency_code
+                            price_text = InvoiceService._extract_text_value(price_amount_obj)
+                        else:
+                            # It's a simple string value
+                            price_text = str(price_amount_obj) if price_amount_obj else None
+                        
+                        if price_text:
+                            try:
+                                line_item['unit_price'] = float(price_text)
+                            except (ValueError, TypeError):
+                                pass
+                
+                # Extract line total (BT-131) - cbc:LineExtensionAmount becomes LineExtensionAmount
+                line_total_obj = None
+                if isinstance(line, dict):
+                    line_total_obj = line.get('LineExtensionAmount') or line.get('lineExtensionAmount') or line.get('cbc:LineExtensionAmount')
+                
+                if not line_total_obj:
+                    line_total_obj = InvoiceService._safe_get(
+                        line,
+                        'LineExtensionAmount',
+                        'lineExtensionAmount',
+                        'cbc:LineExtensionAmount'
+                    )
+                
+                if line_total_obj:
+                    if isinstance(line_total_obj, dict):
+                        # Extract currency from attribute if not already set
+                        if not line_item['currency']:
+                            currency_code = (line_total_obj.get('@currencyID') or 
+                                           line_total_obj.get('currencyID') or
+                                           line_total_obj.get('@currencyid') or
+                                           line_total_obj.get('currencyid'))
+                            if currency_code:
+                                line_item['currency'] = currency_code
+                        line_total_text = InvoiceService._extract_text_value(line_total_obj)
+                    else:
+                        # It's a simple string value
+                        line_total_text = str(line_total_obj) if line_total_obj else None
+                    
+                    if line_total_text:
+                        try:
+                            line_item['line_total'] = float(line_total_text)
+                        except (ValueError, TypeError):
+                            pass
+                
+                # Add line item if it has any meaningful data
+                # Don't require both line_id and item_name - either one is enough
+                has_data = (
+                    line_item['line_id'] or 
+                    line_item['item_name'] or 
+                    line_item['quantity'] is not None or
+                    line_item['unit_price'] is not None or
+                    line_item['line_total'] is not None
+                )
+                
+                if has_data:
+                    line_items.append(line_item)
+                else:
+                    # Debug: log why line item was skipped
+                    try:
+                        from flask import current_app
+                        current_app.logger.debug(f"Line item skipped - no data found. Line keys: {list(line.keys()) if isinstance(line, dict) else 'not a dict'}")
+                        current_app.logger.debug(f"Line item data: {line_item}")
+                    except (RuntimeError, ImportError):
+                        pass
+            
+            # Debug: log extraction results
+            try:
+                from flask import current_app
+                current_app.logger.debug(f"Extracted {len(line_items)} line items. First item keys: {list(line_items[0].keys()) if line_items else 'none'}")
+            except (RuntimeError, ImportError):
+                pass
+            
+            return line_items
+            
+        except Exception as e:
+            # Log error and return empty list
+            try:
+                from flask import current_app
+                current_app.logger.error(f"Error in extract_invoice_line_items: {str(e)}", exc_info=True)
+            except (RuntimeError, ImportError):
+                pass
+            return []
     
     @staticmethod
     def extract_invoice_fields(parsed_data):
