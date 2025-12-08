@@ -602,11 +602,11 @@ class InvoiceService:
                         )
                     
                     if tax_exclusive_obj:
-                    amount_val, curr_val = extract_amount_and_currency(
-                        tax_exclusive_obj,
-                        'TaxExclusiveAmount',
-                        expected_currency=invoice_data.get('currency')
-                    )
+                        amount_val, curr_val = extract_amount_and_currency(
+                            tax_exclusive_obj,
+                            'TaxExclusiveAmount',
+                            expected_currency=invoice_data.get('currency')
+                        )
                         if amount_val is not None:
                             invoice_data['total_amount'] = amount_val
                         if curr_val and not invoice_data['currency']:
