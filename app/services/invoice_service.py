@@ -446,14 +446,13 @@ class InvoiceService:
             
             # Extract total amount from LegalMonetaryTotal
             # According to Peppol BIS Billing 3.0:
-            # - BT-112: Invoice total amount with VAT (cbc:TaxInclusiveAmount) - This is the correct total to display
-            # - BT-115: Amount due for payment (cbc:PayableAmount) - May be different if there are prepayments/discounts
+            # - BT-112: Invoice total amount with VAT (cbc:TaxInclusiveAmount) - correct display total
+            # - BT-115: Amount due for payment (cbc:PayableAmount)
             # - BT-109: Invoice total amount without VAT (cbc:TaxExclusiveAmount)
-            # Priority: TaxInclusiveAmount (BT-112) for display, then PayableAmount (BT-115), then TaxExclusiveAmount (BT-109)
-            # Search more broadly for LegalMonetaryTotal with various namespace combinations
+            # We search aggressively for LegalMonetaryTotal (any namespace/URI) before falling back.
             legal_monetary_total = None
             
-            # Try multiple namespace variations
+            # Try common keys first
             possible_keys = [
                 'cac:LegalMonetaryTotal',
                 'LegalMonetaryTotal',
@@ -467,19 +466,19 @@ class InvoiceService:
                 if legal_monetary_total:
                     break
             
-            # If not found, search recursively through the structure
+            # If still not found, search recursively for any key containing "LegalMonetaryTotal"
             if not legal_monetary_total:
-                def find_legal_monetary_total(obj, depth=0, max_depth=5):
-                    """Recursively search for LegalMonetaryTotal"""
+                def find_legal_monetary_total(obj, depth=0, max_depth=8):
+                    """Recursively search for LegalMonetaryTotal regardless of namespace/URI"""
                     if depth > max_depth or not isinstance(obj, dict):
                         return None
                     
                     # Check current level
                     for key in obj.keys():
-                        if isinstance(key, str) and 'LegalMonetaryTotal' in key or 'legalMonetaryTotal' in key.lower():
+                        if isinstance(key, str) and ('legalmonetarytotal' in key.lower()):
                             return obj[key]
                     
-                    # Recurse into nested dicts
+                    # Recurse into nested structures
                     for value in obj.values():
                         if isinstance(value, dict):
                             result = find_legal_monetary_total(value, depth + 1, max_depth)
