@@ -314,6 +314,17 @@ class InvoiceService:
                                 invoice_data['issuer_vat_id'] = company_id
                                 break
             
+            # Extra fallback for issuer/supplier name: search entire invoice for RegistrationName/Name
+            if not invoice_data['issuer_name']:
+                issuer_fallback = _find_first_text(
+                    invoice_root,
+                    ['cbc:RegistrationName', 'RegistrationName', 'cbc:Name', 'Name']
+                )
+                if issuer_fallback:
+                    invoice_data['issuer_name'] = issuer_fallback
+                    if not invoice_data['supplier_name']:
+                        invoice_data['supplier_name'] = issuer_fallback
+            
             # Extract customer/receiver information (BUYER)
             # Path: cac:AccountingCustomerParty/cac:Party/cac:PartyLegalEntity/cbc:RegistrationName (BT-44)
             customer_party = InvoiceService._safe_get(
@@ -363,6 +374,15 @@ class InvoiceService:
                     party_name = InvoiceService._extract_text_value(party_name_raw)
                     if party_name:
                         invoice_data['receiver_name'] = party_name
+            
+            # Extra fallback for receiver name: search entire invoice for RegistrationName/Name
+            if not invoice_data['receiver_name']:
+                receiver_fallback = _find_first_text(
+                    invoice_root,
+                    ['cbc:RegistrationName', 'RegistrationName', 'cbc:Name', 'Name']
+                )
+                if receiver_fallback:
+                    invoice_data['receiver_name'] = receiver_fallback
                 
                 # Extract receiver VAT ID from PartyTaxScheme -> CompanyID (BT-48)
                 tax_schemes = InvoiceService._safe_get(
@@ -443,6 +463,27 @@ class InvoiceService:
             currency = InvoiceService._extract_text_value(currency_raw)
             if currency:
                 invoice_data['currency'] = currency
+            
+            # Helper: recursively find first text value for any matching key names
+            def _find_first_text(obj, candidate_keys, depth=0, max_depth=8):
+                if depth > max_depth:
+                    return None
+                if isinstance(obj, dict):
+                    for k, v in obj.items():
+                        k_lower = str(k).lower()
+                        if any(ck.lower() == k_lower for ck in candidate_keys):
+                            val = InvoiceService._extract_text_value(v)
+                            if val:
+                                return val
+                        res = _find_first_text(v, candidate_keys, depth+1, max_depth)
+                        if res:
+                            return res
+                elif isinstance(obj, list):
+                    for item in obj:
+                        res = _find_first_text(item, candidate_keys, depth+1, max_depth)
+                        if res:
+                            return res
+                return None
             
             # Extract total amount from LegalMonetaryTotal
             # According to Peppol BIS Billing 3.0:
