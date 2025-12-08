@@ -445,7 +445,11 @@ class InvoiceService:
                 invoice_data['currency'] = currency
             
             # Extract total amount from LegalMonetaryTotal
-            # Try PayableAmount (BT-115) first, then TaxInclusiveAmount (BT-112), then TaxExclusiveAmount (BT-109)
+            # According to Peppol BIS Billing 3.0:
+            # - BT-112: Invoice total amount with VAT (cbc:TaxInclusiveAmount) - This is the correct total to display
+            # - BT-115: Amount due for payment (cbc:PayableAmount) - May be different if there are prepayments/discounts
+            # - BT-109: Invoice total amount without VAT (cbc:TaxExclusiveAmount)
+            # Priority: TaxInclusiveAmount (BT-112) for display, then PayableAmount (BT-115), then TaxExclusiveAmount (BT-109)
             # Search more broadly for LegalMonetaryTotal with various namespace combinations
             legal_monetary_total = None
             
@@ -515,47 +519,68 @@ class InvoiceService:
                 
                 return amount_value, currency_value
             
-            if legal_monetary_total:
+            if legal_monetary_total and isinstance(legal_monetary_total, dict):
                 
-                # Try PayableAmount (BT-115) - Amount due for payment
-                payable_amount_obj = InvoiceService._safe_get(
-                    legal_monetary_total,
-                    'cbc:PayableAmount',
-                    'PayableAmount',
-                    'payableAmount'
-                )
+                # Priority 1: TaxInclusiveAmount (BT-112) - Invoice total amount with VAT
+                # This is the correct total amount to display according to Peppol BIS Billing 3.0
+                # When process_namespaces=True, cbc:TaxInclusiveAmount becomes TaxInclusiveAmount
+                tax_inclusive_obj = None
+                if 'TaxInclusiveAmount' in legal_monetary_total:
+                    tax_inclusive_obj = legal_monetary_total['TaxInclusiveAmount']
+                elif 'cbc:TaxInclusiveAmount' in legal_monetary_total:
+                    tax_inclusive_obj = legal_monetary_total['cbc:TaxInclusiveAmount']
+                else:
+                    tax_inclusive_obj = InvoiceService._safe_get(
+                        legal_monetary_total,
+                        'TaxInclusiveAmount',
+                        'taxInclusiveAmount',
+                        'cbc:TaxInclusiveAmount'
+                    )
                 
-                if payable_amount_obj:
-                    amount_val, curr_val = extract_amount_and_currency(payable_amount_obj, 'PayableAmount')
+                if tax_inclusive_obj:
+                    amount_val, curr_val = extract_amount_and_currency(tax_inclusive_obj, 'TaxInclusiveAmount')
                     if amount_val is not None:
                         invoice_data['total_amount'] = amount_val
                     if curr_val and not invoice_data['currency']:
                         invoice_data['currency'] = curr_val
                 
-                # Fallback: TaxInclusiveAmount (BT-112)
+                # Priority 2: PayableAmount (BT-115) - Amount due for payment
+                # This may differ from TaxInclusiveAmount if there are prepayments or discounts
                 if not invoice_data['total_amount']:
-                    tax_inclusive_obj = InvoiceService._safe_get(
-                        legal_monetary_total,
-                        'cbc:TaxInclusiveAmount',
-                        'TaxInclusiveAmount',
-                        'taxInclusiveAmount'
-                    )
+                    payable_amount_obj = None
+                    if 'PayableAmount' in legal_monetary_total:
+                        payable_amount_obj = legal_monetary_total['PayableAmount']
+                    elif 'cbc:PayableAmount' in legal_monetary_total:
+                        payable_amount_obj = legal_monetary_total['cbc:PayableAmount']
+                    else:
+                        payable_amount_obj = InvoiceService._safe_get(
+                            legal_monetary_total,
+                            'PayableAmount',
+                            'payableAmount',
+                            'cbc:PayableAmount'
+                        )
                     
-                    if tax_inclusive_obj:
-                        amount_val, curr_val = extract_amount_and_currency(tax_inclusive_obj, 'TaxInclusiveAmount')
+                    if payable_amount_obj:
+                        amount_val, curr_val = extract_amount_and_currency(payable_amount_obj, 'PayableAmount')
                         if amount_val is not None:
                             invoice_data['total_amount'] = amount_val
                         if curr_val and not invoice_data['currency']:
                             invoice_data['currency'] = curr_val
                 
-                # Final fallback: TaxExclusiveAmount (BT-109)
+                # Priority 3: TaxExclusiveAmount (BT-109) - Invoice total amount without VAT
                 if not invoice_data['total_amount']:
-                    tax_exclusive_obj = InvoiceService._safe_get(
-                        legal_monetary_total,
-                        'cbc:TaxExclusiveAmount',
-                        'TaxExclusiveAmount',
-                        'taxExclusiveAmount'
-                    )
+                    tax_exclusive_obj = None
+                    if 'TaxExclusiveAmount' in legal_monetary_total:
+                        tax_exclusive_obj = legal_monetary_total['TaxExclusiveAmount']
+                    elif 'cbc:TaxExclusiveAmount' in legal_monetary_total:
+                        tax_exclusive_obj = legal_monetary_total['cbc:TaxExclusiveAmount']
+                    else:
+                        tax_exclusive_obj = InvoiceService._safe_get(
+                            legal_monetary_total,
+                            'TaxExclusiveAmount',
+                            'taxExclusiveAmount',
+                            'cbc:TaxExclusiveAmount'
+                        )
                     
                     if tax_exclusive_obj:
                         amount_val, curr_val = extract_amount_and_currency(tax_exclusive_obj, 'TaxExclusiveAmount')
