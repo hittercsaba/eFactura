@@ -1393,15 +1393,17 @@ class InvoiceService:
                 invoice.cif_beneficiar = receiver_vat_id
                 updated = True
             
-            # Update total amount
-            if invoice.total_amount is None and total_amount is not None:
-                invoice.total_amount = total_amount
-                updated = True
+            # Update total amount (also overwrite if different)
+            if total_amount is not None:
+                if invoice.total_amount is None or invoice.total_amount != total_amount:
+                    invoice.total_amount = total_amount
+                    updated = True
             
-            # Update currency - treat "-" as missing
-            if InvoiceService._is_empty_or_dash(invoice.currency) and currency:
-                invoice.currency = currency
-                updated = True
+            # Update currency - treat "-" as missing or overwrite if different
+            if currency:
+                if InvoiceService._is_empty_or_dash(invoice.currency) or invoice.currency != currency:
+                    invoice.currency = currency
+                    updated = True
             
             # Also update supplier_name if missing or "-" and we have issuer_name
             if InvoiceService._is_empty_or_dash(invoice.supplier_name) and issuer_name:
