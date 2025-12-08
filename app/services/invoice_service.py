@@ -270,7 +270,20 @@ class InvoiceService:
                 default={}
             )
             if not supplier_party:
-                supplier_party = _find_section(invoice_root, ['accountingsupplierparty'])
+                # Try to find AccountingSupplierParty section
+                supplier_section = _find_section(invoice_root, ['accountingsupplierparty'])
+                if supplier_section:
+                    # Extract Party from within AccountingSupplierParty
+                    supplier_party = InvoiceService._safe_get(
+                        supplier_section,
+                        'cac:Party',
+                        'Party',
+                        'party',
+                        default={}
+                    )
+                    if not supplier_party and isinstance(supplier_section, dict):
+                        # Try direct access
+                        supplier_party = supplier_section.get('Party') or supplier_section.get('cac:Party') or supplier_section
             
             if supplier_party:
                 # Extract issuer name from PartyLegalEntity -> RegistrationName (BT-27)
@@ -297,23 +310,38 @@ class InvoiceService:
                 
                 # Fallback: try PartyName -> Name (BT-28)
                 if not invoice_data['issuer_name']:
-                    party_name_obj = InvoiceService._safe_get(
-                        supplier_party,
-                        'cac:PartyName',
-                        'PartyName',
-                        'partyName',
-                        default={}
-                    )
-                    party_name_raw = InvoiceService._safe_get(
-                        party_name_obj,
-                        'cbc:Name',
-                        'Name',
-                        'name'
-                    )
-                    party_name = InvoiceService._extract_text_value(party_name_raw)
-                    if party_name:
-                        invoice_data['supplier_name'] = party_name
-                        invoice_data['issuer_name'] = party_name
+                    # Try direct access first (when process_namespaces=True, keys are stripped)
+                    party_name_obj = None
+                    if isinstance(supplier_party, dict):
+                        party_name_obj = supplier_party.get('PartyName') or supplier_party.get('cac:PartyName')
+                    
+                    if not party_name_obj:
+                        party_name_obj = InvoiceService._safe_get(
+                            supplier_party,
+                            'PartyName',
+                            'partyName',
+                            'cac:PartyName',
+                            default={}
+                        )
+                    
+                    if party_name_obj:
+                        # Try direct access for Name
+                        party_name_raw = None
+                        if isinstance(party_name_obj, dict):
+                            party_name_raw = party_name_obj.get('Name') or party_name_obj.get('cbc:Name')
+                        
+                        if not party_name_raw:
+                            party_name_raw = InvoiceService._safe_get(
+                                party_name_obj,
+                                'Name',
+                                'name',
+                                'cbc:Name'
+                            )
+                        
+                        party_name = InvoiceService._extract_text_value(party_name_raw)
+                        if party_name:
+                            invoice_data['supplier_name'] = party_name
+                            invoice_data['issuer_name'] = party_name
                 
                 # Extract issuer VAT ID from PartyTaxScheme -> CompanyID (BT-31)
                 # Note: PartyTaxScheme can appear 0..2 times, look for one with VAT scheme
@@ -380,7 +408,20 @@ class InvoiceService:
                 default={}
             )
             if not customer_party:
-                customer_party = _find_section(invoice_root, ['accountingcustomerparty'])
+                # Try to find AccountingCustomerParty section
+                customer_section = _find_section(invoice_root, ['accountingcustomerparty'])
+                if customer_section:
+                    # Extract Party from within AccountingCustomerParty
+                    customer_party = InvoiceService._safe_get(
+                        customer_section,
+                        'cac:Party',
+                        'Party',
+                        'party',
+                        default={}
+                    )
+                    if not customer_party and isinstance(customer_section, dict):
+                        # Try direct access
+                        customer_party = customer_section.get('Party') or customer_section.get('cac:Party') or customer_section
             
             if customer_party:
                 # Extract receiver name from PartyLegalEntity -> RegistrationName (BT-44)
@@ -405,22 +446,37 @@ class InvoiceService:
                 
                 # Fallback: try PartyName -> Name (BT-45)
                 if not invoice_data['receiver_name']:
-                    party_name_obj = InvoiceService._safe_get(
-                        customer_party,
-                        'cac:PartyName',
-                        'PartyName',
-                        'partyName',
-                        default={}
-                    )
-                    party_name_raw = InvoiceService._safe_get(
-                        party_name_obj,
-                        'cbc:Name',
-                        'Name',
-                        'name'
-                    )
-                    party_name = InvoiceService._extract_text_value(party_name_raw)
-                    if party_name:
-                        invoice_data['receiver_name'] = party_name
+                    # Try direct access first (when process_namespaces=True, keys are stripped)
+                    party_name_obj = None
+                    if isinstance(customer_party, dict):
+                        party_name_obj = customer_party.get('PartyName') or customer_party.get('cac:PartyName')
+                    
+                    if not party_name_obj:
+                        party_name_obj = InvoiceService._safe_get(
+                            customer_party,
+                            'PartyName',
+                            'partyName',
+                            'cac:PartyName',
+                            default={}
+                        )
+                    
+                    if party_name_obj:
+                        # Try direct access for Name
+                        party_name_raw = None
+                        if isinstance(party_name_obj, dict):
+                            party_name_raw = party_name_obj.get('Name') or party_name_obj.get('cbc:Name')
+                        
+                        if not party_name_raw:
+                            party_name_raw = InvoiceService._safe_get(
+                                party_name_obj,
+                                'Name',
+                                'name',
+                                'cbc:Name'
+                            )
+                        
+                        party_name = InvoiceService._extract_text_value(party_name_raw)
+                        if party_name:
+                            invoice_data['receiver_name'] = party_name
             
             # Extra fallback for receiver name: search within customer_party if we found it
             if not invoice_data['receiver_name'] and customer_party:
