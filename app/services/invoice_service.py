@@ -624,6 +624,61 @@ class InvoiceService:
                         if curr_val and not invoice_data['currency']:
                             invoice_data['currency'] = curr_val
             
+            # Fallback pass: if amount is still missing or zero, try parsing without namespace processing
+            if (not invoice_data['total_amount']) or (isinstance(invoice_data['total_amount'], Decimal) and invoice_data['total_amount'] == 0):
+                try:
+                    fb_dict = xmltodict.parse(xml_content)
+                    # Try to locate LegalMonetaryTotal
+                    lmt_fb = None
+                    for key in ['cac:LegalMonetaryTotal', 'LegalMonetaryTotal', 'legalMonetaryTotal']:
+                        if isinstance(fb_dict, dict):
+                            # Look at root and any Invoice element
+                            if key in fb_dict.get('Invoice', {}):
+                                lmt_fb = fb_dict['Invoice'][key]
+                                break
+                            if key in fb_dict:
+                                lmt_fb = fb_dict[key]
+                                break
+                    # If not found, search recursively
+                    if not lmt_fb:
+                        def find_lmt_fb(obj, depth=0, max_depth=6):
+                            if depth > max_depth or not isinstance(obj, dict):
+                                return None
+                            for k, v in obj.items():
+                                if isinstance(k, str) and 'legalmonetarytotal' in k.lower():
+                                    return v
+                            for v in obj.values():
+                                if isinstance(v, dict):
+                                    res = find_lmt_fb(v, depth+1, max_depth)
+                                    if res:
+                                        return res
+                                elif isinstance(v, list):
+                                    for item in v:
+                                        if isinstance(item, dict):
+                                            res = find_lmt_fb(item, depth+1, max_depth)
+                                            if res:
+                                                return res
+                            return None
+                        lmt_fb = find_lmt_fb(fb_dict)
+                    
+                    if lmt_fb and isinstance(lmt_fb, dict):
+                        # Prefer TaxInclusiveAmount, then PayableAmount
+                        for key_name in ['cbc:TaxInclusiveAmount', 'TaxInclusiveAmount', 'cbc:PayableAmount', 'PayableAmount']:
+                            if key_name in lmt_fb:
+                                amt_obj = lmt_fb[key_name]
+                                amt_val, curr_val = extract_amount_and_currency(
+                                    amt_obj,
+                                    key_name,
+                                    expected_currency=invoice_data.get('currency')
+                                )
+                                if amt_val is not None:
+                                    invoice_data['total_amount'] = amt_val
+                                    if curr_val and not invoice_data['currency']:
+                                        invoice_data['currency'] = curr_val
+                                    break
+                except Exception:
+                    pass
+            
             # If we still haven't found the amount, search recursively through the ENTIRE XML structure
             # (not just invoice_root, in case the structure is different)
             if not invoice_data['total_amount']:
