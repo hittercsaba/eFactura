@@ -532,8 +532,6 @@ class InvoiceService:
             if legal_monetary_total and isinstance(legal_monetary_total, dict):
                 
                 # Priority 1: TaxInclusiveAmount (BT-112) - Invoice total amount with VAT
-                # This is the correct total amount to display according to Peppol BIS Billing 3.0
-                # When process_namespaces=True, cbc:TaxInclusiveAmount becomes TaxInclusiveAmount
                 tax_inclusive_obj = None
                 if 'TaxInclusiveAmount' in legal_monetary_total:
                     tax_inclusive_obj = legal_monetary_total['TaxInclusiveAmount']
@@ -559,31 +557,30 @@ class InvoiceService:
                         invoice_data['currency'] = curr_val
                 
                 # Priority 2: PayableAmount (BT-115) - Amount due for payment
-                # This may differ from TaxInclusiveAmount if there are prepayments or discounts
-                if not invoice_data['total_amount']:
-                    payable_amount_obj = None
-                    if 'PayableAmount' in legal_monetary_total:
-                        payable_amount_obj = legal_monetary_total['PayableAmount']
-                    elif 'cbc:PayableAmount' in legal_monetary_total:
-                        payable_amount_obj = legal_monetary_total['cbc:PayableAmount']
-                    else:
-                        payable_amount_obj = InvoiceService._safe_get(
-                            legal_monetary_total,
-                            'PayableAmount',
-                            'payableAmount',
-                            'cbc:PayableAmount'
-                        )
-                    
-                    if payable_amount_obj:
-                        amount_val, curr_val = extract_amount_and_currency(
-                            payable_amount_obj,
-                            'PayableAmount',
-                            expected_currency=invoice_data.get('currency')
-                        )
-                        if amount_val is not None:
-                            invoice_data['total_amount'] = amount_val
-                        if curr_val and not invoice_data['currency']:
-                            invoice_data['currency'] = curr_val
+                payable_amount_obj = None
+                if 'PayableAmount' in legal_monetary_total:
+                    payable_amount_obj = legal_monetary_total['PayableAmount']
+                elif 'cbc:PayableAmount' in legal_monetary_total:
+                    payable_amount_obj = legal_monetary_total['cbc:PayableAmount']
+                else:
+                    payable_amount_obj = InvoiceService._safe_get(
+                        legal_monetary_total,
+                        'PayableAmount',
+                        'payableAmount',
+                        'cbc:PayableAmount'
+                    )
+                
+                if payable_amount_obj:
+                    amount_val, curr_val = extract_amount_and_currency(
+                        payable_amount_obj,
+                        'PayableAmount',
+                        expected_currency=invoice_data.get('currency')
+                    )
+                    if amount_val is not None:
+                        # If TaxInclusive not set, or PayableAmount is present, prefer this as amount due
+                        invoice_data['total_amount'] = amount_val
+                    if curr_val and not invoice_data['currency']:
+                        invoice_data['currency'] = curr_val
                 
                 # Priority 3: TaxExclusiveAmount (BT-109) - Invoice total amount without VAT
                 if not invoice_data['total_amount']:
