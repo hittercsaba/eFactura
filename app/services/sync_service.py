@@ -1,7 +1,7 @@
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.triggers.date import DateTrigger
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, date
 from flask import current_app
 import zipfile
 import io
@@ -550,6 +550,26 @@ def _sync_company_invoices_impl(company_id, force=False):
                 issuer_name, receiver_name, issuer_vat_id, receiver_vat_id = \
                     invoice_service.extract_invoice_fields(parsed_data)
                 
+                # Convert Decimal values to float for JSON serialization
+                # json_content field requires JSON-serializable values
+                def convert_decimals_to_float(obj):
+                    """Recursively convert Decimal objects to float for JSON serialization"""
+                    from decimal import Decimal
+                    if isinstance(obj, Decimal):
+                        return float(obj)
+                    elif isinstance(obj, dict):
+                        return {key: convert_decimals_to_float(value) for key, value in obj.items()}
+                    elif isinstance(obj, list):
+                        return [convert_decimals_to_float(item) for item in obj]
+                    elif isinstance(obj, date):
+                        # Convert date objects to ISO format strings
+                        return obj.isoformat() if hasattr(obj, 'isoformat') else str(obj)
+                    else:
+                        return obj
+                
+                # Convert parsed_data to JSON-serializable format
+                json_serializable_data = convert_decimals_to_float(parsed_data)
+                
                 # Use VAT IDs from XML if available, otherwise from detalii field
                 final_cif_emitent = issuer_vat_id or cif_emitent
                 final_cif_beneficiar = receiver_vat_id or cif_beneficiar
@@ -589,7 +609,7 @@ def _sync_company_invoices_impl(company_id, force=False):
                     total_amount=total_amount,
                     currency=currency,  # Extracted from XML
                     xml_content=xml_content,
-                    json_content=parsed_data,
+                    json_content=json_serializable_data,  # JSON-serializable version of parsed_data
                     zip_file_path=zip_file_path,  # Path to saved ZIP file
                     synced_at=datetime.now(timezone.utc)
                 )
