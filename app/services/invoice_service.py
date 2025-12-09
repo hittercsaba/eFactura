@@ -162,12 +162,9 @@ class InvoiceService:
         """
         try:
             # Parse XML to ordered dict
-            # Try with namespace processing first
-            try:
-                invoice_dict = xmltodict.parse(xml_content, process_namespaces=True, namespaces={})
-            except:
-                # Fallback to default parsing
-                invoice_dict = xmltodict.parse(xml_content)
+            # Parse without namespace processing to keep namespace prefixes (cac:, cbc:, etc.)
+            # This is more reliable than process_namespaces=True which can create full URI keys
+            invoice_dict = xmltodict.parse(xml_content)
             
             # Extract key information from UBL structure
             invoice_data = {
@@ -262,13 +259,22 @@ class InvoiceService:
 
             # Extract supplier/issuer information (SELLER)
             # Path: cac:AccountingSupplierParty/cac:Party/cac:PartyLegalEntity/cbc:RegistrationName (BT-27)
+            try:
+                current_app.logger.debug(f"[PARSE_XML] Invoice root keys: {list(invoice_root.keys())[:20] if isinstance(invoice_root, dict) else 'Not a dict'}")
+            except:
+                pass
+            
+            # Since we're not using process_namespaces, keys will have prefixes like cac:, cbc:
             supplier_party = InvoiceService._safe_get(
                 invoice_root,
-                ['cac:AccountingSupplierParty', 'cac:Party'],
-                ['AccountingSupplierParty', 'Party'],
-                ['accountingSupplierParty', 'party'],
+                ['cac:AccountingSupplierParty', 'cac:Party'],  # Try with namespace prefix first
+                ['AccountingSupplierParty', 'Party'],  # Fallback to stripped (unlikely with our parsing)
                 default={}
             )
+            try:
+                current_app.logger.debug(f"[PARSE_XML] Supplier party via _safe_get: {supplier_party is not None and isinstance(supplier_party, dict)}")
+            except:
+                pass
             if not supplier_party:
                 # Try to find AccountingSupplierParty section
                 supplier_section = _find_section(invoice_root, ['accountingsupplierparty'])
@@ -288,37 +294,49 @@ class InvoiceService:
             if supplier_party and isinstance(supplier_party, dict):
                 # Extract issuer name from PartyLegalEntity -> RegistrationName (BT-27)
                 # Also try PartyName as fallback (BT-28)
-                # Try direct access first (namespace-stripped keys)
+                # Try direct access first (namespace-prefixed keys since we're not stripping namespaces)
                 party_legal_entity = None
-                if 'PartyLegalEntity' in supplier_party:
-                    party_legal_entity = supplier_party['PartyLegalEntity']
-                elif 'cac:PartyLegalEntity' in supplier_party:
+                if 'cac:PartyLegalEntity' in supplier_party:  # Check prefixed key first
                     party_legal_entity = supplier_party['cac:PartyLegalEntity']
+                elif 'PartyLegalEntity' in supplier_party:  # Fallback to stripped
+                    party_legal_entity = supplier_party['PartyLegalEntity']
                 else:
                     party_legal_entity = InvoiceService._safe_get(
                         supplier_party,
+                        'cac:PartyLegalEntity',
                         'PartyLegalEntity',
                         'partyLegalEntity',
-                        'cac:PartyLegalEntity',
                         default={}
                     )
                 
                 if party_legal_entity and isinstance(party_legal_entity, dict):
-                    # Try direct access for RegistrationName
+                    try:
+                        current_app.logger.debug(f"[PARSE_XML] Party legal entity keys: {list(party_legal_entity.keys())}")
+                    except:
+                        pass
+                    # Try direct access for RegistrationName (namespace-prefixed keys first)
                     registration_name_raw = None
-                    if 'RegistrationName' in party_legal_entity:
-                        registration_name_raw = party_legal_entity['RegistrationName']
-                    elif 'cbc:RegistrationName' in party_legal_entity:
+                    if 'cbc:RegistrationName' in party_legal_entity:  # Check prefixed key first
                         registration_name_raw = party_legal_entity['cbc:RegistrationName']
+                    elif 'RegistrationName' in party_legal_entity:  # Fallback to stripped
+                        registration_name_raw = party_legal_entity['RegistrationName']
                     else:
                         registration_name_raw = InvoiceService._safe_get(
                             party_legal_entity,
+                            'cbc:RegistrationName',
                             'RegistrationName',
-                            'registrationName',
-                            'cbc:RegistrationName'
+                            'registrationName'
                         )
                     
+                    try:
+                        current_app.logger.debug(f"[PARSE_XML] Registration name raw: {registration_name_raw}")
+                    except:
+                        pass
                     registration_name = InvoiceService._extract_text_value(registration_name_raw)
+                    try:
+                        current_app.logger.debug(f"[PARSE_XML] Issuer name extracted: {registration_name}")
+                    except:
+                        pass
                     if registration_name:
                         invoice_data['supplier_name'] = registration_name
                         invoice_data['issuer_name'] = registration_name
@@ -417,11 +435,14 @@ class InvoiceService:
             # Path: cac:AccountingCustomerParty/cac:Party/cac:PartyLegalEntity/cbc:RegistrationName (BT-44)
             customer_party = InvoiceService._safe_get(
                 invoice_root,
-                ['cac:AccountingCustomerParty', 'cac:Party'],
-                ['AccountingCustomerParty', 'Party'],
-                ['accountingCustomerParty', 'party'],
+                ['cac:AccountingCustomerParty', 'cac:Party'],  # Try with namespace prefix first
+                ['AccountingCustomerParty', 'Party'],  # Fallback to stripped (unlikely with our parsing)
                 default={}
             )
+            try:
+                current_app.logger.debug(f"[PARSE_XML] Customer party via _safe_get: {customer_party is not None and isinstance(customer_party, dict)}")
+            except:
+                pass
             if not customer_party:
                 # Try to find AccountingCustomerParty section
                 customer_section = _find_section(invoice_root, ['accountingcustomerparty'])
@@ -440,37 +461,49 @@ class InvoiceService:
             
             if customer_party and isinstance(customer_party, dict):
                 # Extract receiver name from PartyLegalEntity -> RegistrationName (BT-44)
-                # Try direct access first (namespace-stripped keys)
+                # Try direct access first (namespace-prefixed keys since we're not stripping namespaces)
                 party_legal_entity = None
-                if 'PartyLegalEntity' in customer_party:
-                    party_legal_entity = customer_party['PartyLegalEntity']
-                elif 'cac:PartyLegalEntity' in customer_party:
+                if 'cac:PartyLegalEntity' in customer_party:  # Check prefixed key first
                     party_legal_entity = customer_party['cac:PartyLegalEntity']
+                elif 'PartyLegalEntity' in customer_party:  # Fallback to stripped
+                    party_legal_entity = customer_party['PartyLegalEntity']
                 else:
                     party_legal_entity = InvoiceService._safe_get(
                         customer_party,
+                        'cac:PartyLegalEntity',
                         'PartyLegalEntity',
                         'partyLegalEntity',
-                        'cac:PartyLegalEntity',
                         default={}
                     )
                 
                 if party_legal_entity and isinstance(party_legal_entity, dict):
-                    # Try direct access for RegistrationName
+                    try:
+                        current_app.logger.debug(f"[PARSE_XML] Customer party legal entity keys: {list(party_legal_entity.keys())}")
+                    except:
+                        pass
+                    # Try direct access for RegistrationName (namespace-prefixed keys first)
                     registration_name_raw = None
-                    if 'RegistrationName' in party_legal_entity:
-                        registration_name_raw = party_legal_entity['RegistrationName']
-                    elif 'cbc:RegistrationName' in party_legal_entity:
+                    if 'cbc:RegistrationName' in party_legal_entity:  # Check prefixed key first
                         registration_name_raw = party_legal_entity['cbc:RegistrationName']
+                    elif 'RegistrationName' in party_legal_entity:  # Fallback to stripped
+                        registration_name_raw = party_legal_entity['RegistrationName']
                     else:
                         registration_name_raw = InvoiceService._safe_get(
                             party_legal_entity,
+                            'cbc:RegistrationName',
                             'RegistrationName',
-                            'registrationName',
-                            'cbc:RegistrationName'
+                            'registrationName'
                         )
                     
+                    try:
+                        current_app.logger.debug(f"[PARSE_XML] Customer registration name raw: {registration_name_raw}")
+                    except:
+                        pass
                     registration_name = InvoiceService._extract_text_value(registration_name_raw)
+                    try:
+                        current_app.logger.debug(f"[PARSE_XML] Receiver name extracted: {registration_name}")
+                    except:
+                        pass
                     if registration_name:
                         invoice_data['receiver_name'] = registration_name
                 
