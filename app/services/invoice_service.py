@@ -1498,43 +1498,36 @@ class InvoiceService:
             
             updated = xml_content_updated  # Start with xml_content update status
             
-            # Update missing fields (treat "-" as missing)
-            if InvoiceService._is_empty_or_dash(invoice.issuer_name) and issuer_name:
+            # Overwrite names/IDs/totals/currency when parsed values are present and differ
+            if issuer_name and issuer_name != invoice.issuer_name:
                 invoice.issuer_name = issuer_name
                 updated = True
-            
-            if InvoiceService._is_empty_or_dash(invoice.receiver_name) and receiver_name:
+            if receiver_name and receiver_name != invoice.receiver_name:
                 invoice.receiver_name = receiver_name
                 updated = True
             
-            # Update VAT IDs (cif_emitent and cif_beneficiar) - treat "-" as missing
-            if InvoiceService._is_empty_or_dash(invoice.cif_emitent) and issuer_vat_id:
+            if issuer_vat_id and issuer_vat_id != invoice.cif_emitent:
                 invoice.cif_emitent = issuer_vat_id
                 updated = True
-            
-            if InvoiceService._is_empty_or_dash(invoice.cif_beneficiar) and receiver_vat_id:
+            if receiver_vat_id and receiver_vat_id != invoice.cif_beneficiar:
                 invoice.cif_beneficiar = receiver_vat_id
                 updated = True
             
-            # Update total amount (also overwrite if different)
             if total_amount is not None:
                 if invoice.total_amount is None or invoice.total_amount != total_amount:
                     invoice.total_amount = total_amount
                     updated = True
             
-            # Update currency - treat "-" as missing or overwrite if different
             if currency:
                 if InvoiceService._is_empty_or_dash(invoice.currency) or invoice.currency != currency:
                     invoice.currency = currency
                     updated = True
             
-            # Also update supplier_name if missing or "-" and we have issuer_name
-            if InvoiceService._is_empty_or_dash(invoice.supplier_name) and issuer_name:
+            if issuer_name and (InvoiceService._is_empty_or_dash(invoice.supplier_name) or invoice.supplier_name != issuer_name):
                 invoice.supplier_name = issuer_name
                 updated = True
             
-            # Also update supplier_cif if missing or "-" and we have issuer VAT ID
-            if InvoiceService._is_empty_or_dash(invoice.supplier_cif) and issuer_vat_id:
+            if issuer_vat_id and (InvoiceService._is_empty_or_dash(invoice.supplier_cif) or invoice.supplier_cif != issuer_vat_id):
                 invoice.supplier_cif = issuer_vat_id
                 updated = True
             
