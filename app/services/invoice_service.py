@@ -285,24 +285,39 @@ class InvoiceService:
                         # Try direct access
                         supplier_party = supplier_section.get('Party') or supplier_section.get('cac:Party') or supplier_section
             
-            if supplier_party:
+            if supplier_party and isinstance(supplier_party, dict):
                 # Extract issuer name from PartyLegalEntity -> RegistrationName (BT-27)
                 # Also try PartyName as fallback (BT-28)
-                party_legal_entity = InvoiceService._safe_get(
-                    supplier_party,
-                    'cac:PartyLegalEntity',
-                    'PartyLegalEntity',
-                    'partyLegalEntity',
-                    default={}
-                )
-                
-                if party_legal_entity:
-                    registration_name_raw = InvoiceService._safe_get(
-                        party_legal_entity,
-                        'cbc:RegistrationName',
-                        'RegistrationName',
-                        'registrationName'
+                # Try direct access first (namespace-stripped keys)
+                party_legal_entity = None
+                if 'PartyLegalEntity' in supplier_party:
+                    party_legal_entity = supplier_party['PartyLegalEntity']
+                elif 'cac:PartyLegalEntity' in supplier_party:
+                    party_legal_entity = supplier_party['cac:PartyLegalEntity']
+                else:
+                    party_legal_entity = InvoiceService._safe_get(
+                        supplier_party,
+                        'PartyLegalEntity',
+                        'partyLegalEntity',
+                        'cac:PartyLegalEntity',
+                        default={}
                     )
+                
+                if party_legal_entity and isinstance(party_legal_entity, dict):
+                    # Try direct access for RegistrationName
+                    registration_name_raw = None
+                    if 'RegistrationName' in party_legal_entity:
+                        registration_name_raw = party_legal_entity['RegistrationName']
+                    elif 'cbc:RegistrationName' in party_legal_entity:
+                        registration_name_raw = party_legal_entity['cbc:RegistrationName']
+                    else:
+                        registration_name_raw = InvoiceService._safe_get(
+                            party_legal_entity,
+                            'RegistrationName',
+                            'registrationName',
+                            'cbc:RegistrationName'
+                        )
+                    
                     registration_name = InvoiceService._extract_text_value(registration_name_raw)
                     if registration_name:
                         invoice_data['supplier_name'] = registration_name
@@ -423,23 +438,38 @@ class InvoiceService:
                         # Try direct access
                         customer_party = customer_section.get('Party') or customer_section.get('cac:Party') or customer_section
             
-            if customer_party:
+            if customer_party and isinstance(customer_party, dict):
                 # Extract receiver name from PartyLegalEntity -> RegistrationName (BT-44)
-                party_legal_entity = InvoiceService._safe_get(
-                    customer_party,
-                    'cac:PartyLegalEntity',
-                    'PartyLegalEntity',
-                    'partyLegalEntity',
-                    default={}
-                )
-                
-                if party_legal_entity:
-                    registration_name_raw = InvoiceService._safe_get(
-                        party_legal_entity,
-                        'cbc:RegistrationName',
-                        'RegistrationName',
-                        'registrationName'
+                # Try direct access first (namespace-stripped keys)
+                party_legal_entity = None
+                if 'PartyLegalEntity' in customer_party:
+                    party_legal_entity = customer_party['PartyLegalEntity']
+                elif 'cac:PartyLegalEntity' in customer_party:
+                    party_legal_entity = customer_party['cac:PartyLegalEntity']
+                else:
+                    party_legal_entity = InvoiceService._safe_get(
+                        customer_party,
+                        'PartyLegalEntity',
+                        'partyLegalEntity',
+                        'cac:PartyLegalEntity',
+                        default={}
                     )
+                
+                if party_legal_entity and isinstance(party_legal_entity, dict):
+                    # Try direct access for RegistrationName
+                    registration_name_raw = None
+                    if 'RegistrationName' in party_legal_entity:
+                        registration_name_raw = party_legal_entity['RegistrationName']
+                    elif 'cbc:RegistrationName' in party_legal_entity:
+                        registration_name_raw = party_legal_entity['cbc:RegistrationName']
+                    else:
+                        registration_name_raw = InvoiceService._safe_get(
+                            party_legal_entity,
+                            'RegistrationName',
+                            'registrationName',
+                            'cbc:RegistrationName'
+                        )
+                    
                     registration_name = InvoiceService._extract_text_value(registration_name_raw)
                     if registration_name:
                         invoice_data['receiver_name'] = registration_name
