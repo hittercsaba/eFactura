@@ -20,7 +20,7 @@ from flask import current_app
 
 def reparse_invoice(invoice_id, verbose=False):
     """Reparse a specific invoice"""
-    invoice = Invoice.query.get(invoice_id)
+    invoice = db.session.get(Invoice, invoice_id)
     if not invoice:
         print(f"Invoice {invoice_id} not found")
         return False
@@ -43,6 +43,8 @@ def reparse_invoice(invoice_id, verbose=False):
         print(f"\n  Parsed data:")
         print(f"    - Total Amount: {parsed_data.get('total_amount')}")
         print(f"    - Currency: {parsed_data.get('currency')}")
+        print(f"    - Issuer Name: {parsed_data.get('issuer_name')}")
+        print(f"    - Receiver Name: {parsed_data.get('receiver_name')}")
         if parsed_data.get('error'):
             print(f"    - Error: {parsed_data.get('error')}")
     
