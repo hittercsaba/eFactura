@@ -30,10 +30,16 @@ services:
 
   backup:
     image: ghcr.io/lawndoc/stack-back:latest
-    env_file:
-      - stack-back.env
+    #env_file:
+    #  - stack-back.env
     environment:
-      - AUTO_BACKUP_ALL:True
+      - AUTO_BACKUP_ALL=True
+      # Add your variables here directly:
+      - RESTIC_REPOSITORY=s3:hel1.your-objectstorage.com/processiq
+      - RESTIC_PASSWORD=gZ4RM6WSX3m7g3uRJANyEGq5T
+      - AWS_ACCESS_KEY_ID=4OEKSOA98FULH2RB7EXX
+      - AWS_SECRET_ACCESS_KEY=Actq1ogj6IPjA07zo91SDpMo4Qdtp7n4KyreQPcD
+      - CRON_SCHEDULE=0 1 * * *
     volumes:
       - /var/run/docker.sock:/tmp/docker.sock:ro
       - cache:/cache # Persistent restic cache (greatly speeds up all restic operations)
