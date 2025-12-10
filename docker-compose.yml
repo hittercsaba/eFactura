@@ -28,6 +28,16 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  backup:
+    image: ghcr.io/lawndoc/stack-back:latest
+    env_file:
+      - stack-back.env
+    environment:
+      - AUTO_BACKUP_ALL: True
+    volumes:
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+      - cache:/cache # Persistent restic cache (greatly speeds up all restic operations)
+
 volumes:
   postgres_data:
   invoice_data:
