@@ -40,6 +40,10 @@ services:
       - AWS_ACCESS_KEY_ID=4OEKSOA98FULH2RB7EXX
       - AWS_SECRET_ACCESS_KEY=Actq1ogj6IPjA07zo91SDpMo4Qdtp7n4KyreQPcD
       - CRON_SCHEDULE=0 1 * * *
+      - RESTIC_KEEP_DAILY=7
+      - RESTIC_KEEP_WEEKLY=4
+      - RESTIC_KEEP_MONTHLY=12
+      - RESTIC_KEEP_YEARLY=3
     volumes:
       - /var/run/docker.sock:/tmp/docker.sock:ro
       - cache:/cache # Persistent restic cache (greatly speeds up all restic operations)
