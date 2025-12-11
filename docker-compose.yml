@@ -44,6 +44,7 @@ services:
       - RESTIC_KEEP_WEEKLY=4
       - RESTIC_KEEP_MONTHLY=12
       - RESTIC_KEEP_YEARLY=3
+      - TZ=Europe/Bucharest
     volumes:
       - /var/run/docker.sock:/tmp/docker.sock:ro
       - cache:/cache # Persistent restic cache (greatly speeds up all restic operations)
